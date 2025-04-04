@@ -1,0 +1,16 @@
+﻿[package]
+name = "crypto-trading-app"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+actix-web = "4.4"
+actix-web-actors = "4.2"
+actix = "0.13"
+actix-files = "0.6" # Для отдачи статических файлов
+tokio = { version = "1", features = ["full"] }
+tokio-tungstenite = { version = "0.20", features = ["rustls-tls"] }
+env_logger = "0.10"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+futures-util = "0.3"
