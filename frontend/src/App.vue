@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div class="container mx-auto p-4">
     <h1 class="text-2xl font-bold mb-4">Binance WebSocket Data</h1>
     <pre id="data" class="bg-gray-100 p-4 rounded"></pre>

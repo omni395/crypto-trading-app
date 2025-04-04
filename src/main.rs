@@ -1,4 +1,4 @@
-﻿use actix_web::{web, App, HttpServer, HttpResponse, Responder};
+use actix_web::{web, App, HttpServer, HttpResponse, Responder};
 use actix_web::get;
 use actix_web_actors::ws;
 use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
