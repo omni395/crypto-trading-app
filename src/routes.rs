@@ -1,12 +1,8 @@
-use actix_web::{web, HttpResponse, Responder};
-use actix_web::get;
-use crate::websocket;
+use actix_web::{web, HttpRequest, HttpResponse};
+use actix_web_actors::ws;
 
-#[get("/")]
-pub async fn index() -> impl Responder {
-    HttpResponse::Ok().body("Привет от Rust!")
-}
+use crate::websocket::{WebSocketActor, AppState};
 
-pub async fn ws_handler(req: actix_web::HttpRequest, stream: web::Payload, state: web::Data<websocket::AppState>) -> actix_web::Result<HttpResponse> {
-    websocket::ws_handler(req, stream, state).await
+pub async fn ws_handler(req: HttpRequest, stream: web::Payload, state: web::Data<AppState>) -> Result<HttpResponse, actix_web::Error> {
+    ws::start(WebSocketActor::new(state.into_inner().into()), &req, stream)
 }

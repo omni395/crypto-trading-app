@@ -4,14 +4,12 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 mod binance;
-mod websocket;
 mod routes;
+mod websocket;
 mod models;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    env_logger::init(); // Инициализация логгера
-
     let app_state = web::Data::new(websocket::AppState {
         clients: Arc::new(Mutex::new(Vec::new())),
     });

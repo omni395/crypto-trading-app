@@ -1,23 +1,23 @@
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize};
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Deserialize)]
 pub struct KlineEvent {
     #[serde(rename = "e")]
+    #[allow(dead_code)]
     pub event_type: String,
     #[serde(rename = "E")]
-    pub event_time: i64,
+    pub event_time: u64,
     #[serde(rename = "s")]
     pub symbol: String,
-    #[serde(rename = "k")]
-    pub kline: KlineData,
+    pub k: Kline,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
-pub struct KlineData {
+#[derive(Deserialize)]
+pub struct Kline {
     #[serde(rename = "t")]
-    pub start_time: i64,
+    pub start_time: u64,
     #[serde(rename = "T")]
-    pub close_time: i64,
+    pub close_time: u64,
     #[serde(rename = "s")]
     pub symbol: String,
     #[serde(rename = "i")]
@@ -36,16 +36,12 @@ pub struct KlineData {
     pub is_closed: bool,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Deserialize)]
 pub struct DepthEvent {
-    #[serde(rename = "e")]
-    pub event_type: String,
     #[serde(rename = "E")]
-    pub event_time: i64,
+    pub event_time: u64,
     #[serde(rename = "s")]
     pub symbol: String,
-    #[serde(rename = "b")]
-    pub bids: Vec<(String, String)>,
-    #[serde(rename = "a")]
-    pub asks: Vec<(String, String)>,
+    pub bids: Vec<Vec<String>>,
+    pub asks: Vec<Vec<String>>,
 }
