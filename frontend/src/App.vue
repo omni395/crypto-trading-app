@@ -1,29 +1,12 @@
 <template>
-  <div class="container mx-auto p-4">
-    <h1 class="text-2xl font-bold mb-4">Binance WebSocket Data</h1>
-    <div class="mb-4 flex space-x-4">
-      <div>
-        <label for="symbol" class="mr-2">Symbol:</label>
-        <select id="symbol" v-model="selectedSymbol" @change="updateSubscription">
-          <option value="BTCUSDT">BTCUSDT</option>
-          <option value="ETHUSDT">ETHUSDT</option>
-        </select>
-      </div>
-      <div>
-        <label for="interval" class="mr-2">Interval:</label>
-        <select id="interval" v-model="selectedInterval" @change="updateSubscription">
-          <option value="1m">1m</option>
-          <option value="5m">5m</option>
-          <option value="15m">15m</option>
-        </select>
-      </div>
-    </div>
-    <div id="chart" class="w-full h-96"></div>
+  <div class="app">
+    <h1>Crypto Trading App</h1>
+    <div id="chart" ref="chartContainer"></div>
   </div>
 </template>
 
 <script>
-import { createChart } from 'lightweight-charts';
+import { createChart, ColorType } from 'lightweight-charts';
 
 export default {
   name: 'App',
@@ -31,22 +14,19 @@ export default {
     return {
       chart: null,
       candlestickSeries: null,
-      ws: null,
-      candles: [],
-      lastCandleTime: null,
-      selectedSymbol: 'BTCUSDT',
+      websocket: null,
+      selectedSymbol: 'btcusdt',
       selectedInterval: '1m',
+      historicalData: [], // Для хранения исторических данных
     };
   },
   mounted() {
-    this.$nextTick(() => {
-      this.initChart();
-      this.connectWebSocket();
-    });
+    this.initChart();
+    this.setupWebSocket();
   },
-  beforeUnmount() {
-    if (this.ws) {
-      this.ws.close();
+  beforeDestroy() {
+    if (this.websocket) {
+      this.websocket.close();
     }
     if (this.chart) {
       this.chart.remove();
@@ -54,134 +34,116 @@ export default {
   },
   methods: {
     initChart() {
-      const chartContainer = document.getElementById('chart');
-      if (!chartContainer) {
-        console.error('Контейнер для графика не найден!');
-        return;
-      }
+      const chartContainer = this.$refs.chartContainer;
+      this.chart = createChart(chartContainer, {
+        width: chartContainer.clientWidth,
+        height: 500,
+        layout: {
+          background: { type: ColorType.Solid, color: '#000000' },
+          textColor: '#d1d4dc',
+        },
+        grid: {
+          vertLines: { color: 'rgba(197, 203, 206, 0.1)' },
+          horzLines: { color: 'rgba(197, 203, 206, 0.1)' },
+        },
+        timeScale: {
+          timeVisible: true,
+          secondsVisible: false,
+        },
+      });
 
-      try {
-        this.chart = createChart(chartContainer, {
-          width: chartContainer.clientWidth,
-          height: 384,
-          layout: {
-            backgroundColor: '#ffffff',
-            textColor: '#333',
-          },
-          grid: {
-            vertLines: {
-              color: '#f0f0f0',
-            },
-            horzLines: {
-              color: '#f0f0f0',
-            },
-          },
-          timeScale: {
-            timeVisible: true,
-            secondsVisible: true,
-          },
-        });
+      this.candlestickSeries = this.chart.addCandlestickSeries({
+        upColor: '#26a69a',
+        downColor: '#ef5350',
+        borderVisible: false,
+        wickUpColor: '#26a69a',
+        wickDownColor: '#ef5350',
+      });
 
-        console.log('this.chart:', this.chart);
-
-        this.candlestickSeries = this.chart.addCandlestickSeries({
-          upColor: '#26a69a',
-          downColor: '#ef5350',
-          borderVisible: false,
-          wickUpColor: '#26a69a',
-          wickDownColor: '#ef5350',
-        });
-
-        console.log('this.candlestickSeries:', this.candlestickSeries);
-
-        window.addEventListener('resize', () => {
-          this.chart.resize(chartContainer.clientWidth, 384);
-        });
-      } catch (error) {
-        console.error('Ошибка при инициализации графика:', error);
-      }
+      console.log('График инициализирован:', this.chart);
+      console.log('Серия свечей инициализирована:', this.candlestickSeries);
+      console.log('Размеры контейнера:', chartContainer.clientWidth, chartContainer.clientHeight);
     },
-    connectWebSocket() {
-      this.ws = new WebSocket('ws://127.0.0.1:3000/ws');
-
-      this.ws.onopen = () => {
+    setupWebSocket() {
+      this.websocket = new WebSocket('ws://localhost:3000/ws');
+      this.websocket.onopen = () => {
         console.log('Подключено к локальному WebSocket');
-        // Отправляем начальную подписку
         this.updateSubscription();
       };
 
-      this.ws.onmessage = (event) => {
+      this.websocket.onmessage = (event) => {
         const message = JSON.parse(event.data);
         console.log('Получено сообщение:', message);
-        if (message.e === 'kline') {
-          const kline = message.k;
-          console.log('kline:', kline);
-
-          const candle = {
-            time: kline.t / 1000,
-            open: parseFloat(kline.o),
-            high: parseFloat(kline.h),
-            low: parseFloat(kline.l),
-            close: parseFloat(kline.c),
-          };
-
-          console.log('Обновление свечи:', candle);
-
-          if (
-            typeof candle.time !== 'number' ||
-            isNaN(candle.open) ||
-            isNaN(candle.high) ||
-            isNaN(candle.low) ||
-            isNaN(candle.close)
-          ) {
-            console.error('Некорректные данные свечи:', candle);
-            return;
-          }
-
-          if (this.candlestickSeries) {
-            if (this.lastCandleTime === null || candle.time > this.lastCandleTime) {
-              this.candles.push(candle);
-              this.candlestickSeries.setData(this.candles);
-              console.log('Новая свеча добавлена:', candle);
-            } else {
-              this.candles[this.candles.length - 1] = candle;
-              this.candlestickSeries.setData(this.candles);
-              console.log('Свеча обновлена:', candle);
-            }
-
-            this.lastCandleTime = candle.time;
-
-            this.chart.timeScale().fitContent();
-          } else {
-            console.error('candlestickSeries не инициализирован!');
-          }
-        }
+        this.handleWebSocketMessage(message);
       };
 
-      this.ws.onerror = (error) => {
-        console.error('Ошибка WebSocket:', error);
-      };
-
-      this.ws.onclose = () => {
+      this.websocket.onclose = () => {
         console.log('WebSocket закрыт');
       };
+
+      this.websocket.onerror = (error) => {
+        console.error('WebSocket ошибка:', error);
+      };
+    },
+    handleWebSocketMessage(message) {
+      if (message.event_type === 'historical_kline') {
+        const candlestickData = {
+          time: message.time,
+          open: message.open,
+          high: message.high,
+          low: message.low,
+          close: message.close,
+        };
+        this.historicalData.push(candlestickData);
+        console.log('Добавлены исторические данные:', candlestickData);
+
+        // Сортируем данные по времени и устанавливаем их в график
+        this.historicalData.sort((a, b) => a.time - b.time);
+        if (this.candlestickSeries) {
+          this.candlestickSeries.setData(this.historicalData);
+          console.log('Установлены исторические данные в график');
+        } else {
+          console.error('Серия свечей не инициализирована для исторических данных');
+        }
+      } else if (message.event_type === 'kline') {
+        const kline = message.kline;
+        const candlestickData = {
+          time: kline.start_time / 1000,
+          open: parseFloat(kline.open),
+          high: parseFloat(kline.high),
+          low: parseFloat(kline.low),
+          close: parseFloat(kline.close),
+        };
+        console.log('Подготовлены данные для графика:', candlestickData);
+        if (this.candlestickSeries) {
+          this.candlestickSeries.update(candlestickData);
+          console.log('Обновлена серия свечей');
+        } else {
+          console.error('Серия свечей не инициализирована');
+        }
+      }
     },
     updateSubscription() {
-      if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-        // Очищаем текущие данные
-        this.candles = [];
-        this.lastCandleTime = null;
-        this.candlestickSeries.setData(this.candles);
-
-        // Отправляем новую подписку
+      if (this.websocket && this.websocket.readyState === WebSocket.OPEN) {
         const subscription = {
-          symbol: this.selectedSymbol.toLowerCase(),
+          symbol: this.selectedSymbol,
           interval: this.selectedInterval,
         };
-        this.ws.send(JSON.stringify(subscription));
+        this.websocket.send(JSON.stringify(subscription));
         console.log('Отправлена подписка:', subscription);
       }
     },
   },
 };
 </script>
+
+<style scoped>
+.app {
+  text-align: center;
+  padding: 20px;
+}
+
+#chart {
+  margin: 0 auto;
+}
+</style>
