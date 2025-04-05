@@ -21,8 +21,8 @@ export default {
       earliestTime: null,
       latestTime: null,
       isLoading: false,
-      currentRequest: null, // Храним текущий запрос
-      expectedCandles: 1000, // Ожидаемое количество свечей (по лимиту Binance API)
+      currentRequest: null,
+      expectedCandles: 1000,
     };
   },
   mounted() {
@@ -54,6 +54,9 @@ export default {
         timeScale: {
           timeVisible: true,
           secondsVisible: false,
+          rightOffset: 10,
+          fixLeftEdge: false,
+          fixRightEdge: false,
         },
       });
 
@@ -65,12 +68,14 @@ export default {
         wickDownColor: '#ef5350',
       });
 
-      // Отслеживаем изменение видимого временного диапазона
       this.chart.timeScale().subscribeVisibleTimeRangeChange(() => {
         const range = this.chart.timeScale().getVisibleRange();
+        console.log('Видимый диапазон:', range);
         if (range && this.earliestTime && !this.isLoading) {
           const earliestVisibleTime = range.from;
+          console.log('Сравнение:', { earliestVisibleTime, earliestTime: this.earliestTime });
           if (earliestVisibleTime && earliestVisibleTime < this.earliestTime) {
+            console.log('Прокрутка влево, подгружаем данные');
             this.loadMoreHistoricalData();
           }
         }
@@ -85,7 +90,6 @@ export default {
       this.websocket.onopen = () => {
         console.log('Подключено к локальному WebSocket');
         this.updateSubscription();
-        // Загружаем данные за последние 7 дней
         this.loadInitialHistoricalData();
       };
 
@@ -105,7 +109,6 @@ export default {
     },
     handleWebSocketMessage(message) {
       if (message.event_type === 'historical_kline') {
-        // Проверяем, что все значения корректны
         const open = parseFloat(message.open);
         const high = parseFloat(message.high);
         const low = parseFloat(message.low);
@@ -138,48 +141,31 @@ export default {
         console.log('Добавлены исторические данные:', candlestickData);
         console.log('Текущее количество свечей:', this.historicalData.length);
 
-        // Проверяем, получили ли мы ожидаемое количество свечей
-        if (this.currentRequest && this.historicalData.length >= this.expectedCandles) {
+        if (this.currentRequest && (
+          this.historicalData.length >= this.expectedCandles ||
+          time >= (this.currentRequest.end_time / 1000) - 60
+        )) {
           console.log('Все свечи получены, обновляем график');
-          // Сортируем данные по времени (по возрастанию) и обновляем график
           this.historicalData.sort((a, b) => a.time - b.time);
           if (this.candlestickSeries) {
             this.candlestickSeries.setData(this.historicalData);
             console.log('Обновлены исторические данные в график');
-            // Обновляем earliestTime и latestTime
-            this.earliestTime = this.historicalData[0].time; // Самая ранняя свеча
-            this.latestTime = this.historicalData[this.historicalData.length - 1].time; // Самая поздняя свеча
+            this.earliestTime = this.historicalData[0].time;
+            this.latestTime = this.historicalData[this.historicalData.length - 1].time;
             this.isLoading = false;
 
-            // Фокусируемся на последней свече
             const visibleRange = {
-              from: this.historicalData[this.historicalData.length - 1].time - 60 * 60, // На час раньше последней свечи
-              to: this.historicalData[this.historicalData.length - 1].time + 60 * 60, // На час позже последней свечи
+              from: this.historicalData[this.historicalData.length - 1].time - 60 * 60,
+              to: this.historicalData[this.historicalData.length - 1].time + 60 * 60,
             };
             this.chart.timeScale().setVisibleRange(visibleRange);
           } else {
             console.error('Серия свечей не инициализирована для исторических данных');
           }
-          this.currentRequest = null; // Сбрасываем текущий запрос
+          this.currentRequest = null;
         }
       } else if (message.event_type === 'kline') {
         // Временно закомментировано для тестов
-        // const kline = message.kline;
-        // const candlestickData = {
-        //   time: kline.start_time / 1000,
-        //   open: parseFloat(kline.open),
-        //   high: parseFloat(kline.high),
-        //   low: parseFloat(kline.low),
-        //   close: parseFloat(kline.close),
-        // };
-        // console.log('Подготовлены данные для графика:', candlestickData);
-        // if (this.candlestickSeries) {
-        //   this.candlestickSeries.update(candlestickData);
-        //   console.log('Обновлена серия свечей');
-        //   this.latestTime = candlestickData.time;
-        // } else {
-        //   console.error('Серия свечей не инициализирована');
-        // }
       }
     },
     updateSubscription() {
@@ -193,18 +179,24 @@ export default {
       }
     },
     loadInitialHistoricalData() {
-      const now = Math.floor(new Date('2024-02-07').getTime() / 1000); // 7 февраля 2024
-      const sevenDaysAgo = now - 7 * 24 * 60 * 60; // 31 января 2024
-      console.log('Текущие значения времени:', { now, sevenDaysAgo });
-      this.historicalData = []; // Очищаем перед новым запросом
-      this.requestHistoricalData(sevenDaysAgo * 1000, now * 1000); // Конвертируем в миллисекунды
+      const now = Math.floor(new Date().getTime() / 1000); // Текущая дата: 5 апреля 2025
+      const intervalSeconds = this.selectedInterval === '1m' ? 60 : 0; // 60 секунд для 1m
+      const periodsBack = this.expectedCandles * intervalSeconds; // 1000 свечей назад
+      const startTime = now - periodsBack; // Время 1000 свечей назад
+      console.log('Текущие значения времени:', { now, startTime });
+      this.historicalData = [];
+      this.requestHistoricalData(startTime * 1000, now * 1000); // Конвертируем в миллисекунды
     },
     loadMoreHistoricalData() {
-      if (this.isLoading) return;
+      if (this.isLoading) {
+        console.log('Подгрузка заблокирована, isLoading = true');
+        return;
+      }
       this.isLoading = true;
+      console.log('Запрашиваем более ранние данные');
 
-      const endTime = this.earliestTime * 1000; // В миллисекундах
-      const startTime = endTime - 7 * 24 * 60 * 60 * 1000; // Загружаем ещё 7 дней назад
+      const endTime = this.earliestTime * 1000;
+      const startTime = endTime - 7 * 24 * 60 * 60 * 1000;
       this.requestHistoricalData(startTime, endTime);
     },
     requestHistoricalData(startTime, endTime) {
@@ -215,9 +207,12 @@ export default {
           start_time: startTime,
           end_time: endTime,
         };
-        this.currentRequest = request; // Сохраняем текущий запрос
+        this.currentRequest = request;
         this.websocket.send(JSON.stringify(request));
         console.log('Запрошены исторические данные:', request);
+      } else {
+        console.error('WebSocket не открыт');
+        this.isLoading = false;
       }
     },
   },
