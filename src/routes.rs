@@ -1,8 +1,14 @@
-use actix_web::{web, HttpRequest, HttpResponse};
+use actix_web::{get, web, HttpRequest, Responder};
 use actix_web_actors::ws;
 
-use crate::websocket::{WebSocketActor, AppState};
+use crate::websocket::WebSocketActor;
+use crate::app_state::AppState;
 
-pub async fn ws_handler(req: HttpRequest, stream: web::Payload, state: web::Data<AppState>) -> Result<HttpResponse, actix_web::Error> {
-    ws::start(WebSocketActor::new(state.into_inner().into()), &req, stream)
+#[get("/ws")]
+pub async fn websocket(
+    req: HttpRequest,
+    stream: web::Payload,
+    app_state: web::Data<AppState>,
+) -> impl Responder {
+    ws::start(WebSocketActor::new(app_state), &req, stream) // app_state уже имеет тип web::Data<AppState>
 }

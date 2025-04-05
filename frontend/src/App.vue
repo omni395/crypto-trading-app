@@ -17,7 +17,10 @@ export default {
       websocket: null,
       selectedSymbol: 'btcusdt',
       selectedInterval: '1m',
-      historicalData: [], // Для хранения исторических данных
+      historicalData: [],
+      earliestTime: null, // Самое раннее время на графике
+      latestTime: null,  // Самое позднее время на графике
+      isLoading: false,  // Флаг загрузки
     };
   },
   mounted() {
@@ -60,6 +63,17 @@ export default {
         wickDownColor: '#ef5350',
       });
 
+      // Отслеживаем изменение видимого диапазона
+      this.chart.timeScale().subscribeVisibleLogicalRangeChange(() => {
+        const range = this.chart.timeScale().getVisibleLogicalRange();
+        if (range && this.earliestTime && !this.isLoading) {
+          const earliestVisibleTime = this.chart.timeScale().logicalToTime(range.from);
+          if (earliestVisibleTime && earliestVisibleTime < this.earliestTime) {
+            this.loadMoreHistoricalData();
+          }
+        }
+      });
+
       console.log('График инициализирован:', this.chart);
       console.log('Серия свечей инициализирована:', this.candlestickSeries);
       console.log('Размеры контейнера:', chartContainer.clientWidth, chartContainer.clientHeight);
@@ -69,6 +83,8 @@ export default {
       this.websocket.onopen = () => {
         console.log('Подключено к локальному WebSocket');
         this.updateSubscription();
+        // Загружаем данные за последние 7 дней
+        this.loadInitialHistoricalData();
       };
 
       this.websocket.onmessage = (event) => {
@@ -97,11 +113,15 @@ export default {
         this.historicalData.push(candlestickData);
         console.log('Добавлены исторические данные:', candlestickData);
 
-        // Сортируем данные по времени и устанавливаем их в график
+        // Сортируем данные и обновляем график
         this.historicalData.sort((a, b) => a.time - b.time);
         if (this.candlestickSeries) {
           this.candlestickSeries.setData(this.historicalData);
-          console.log('Установлены исторические данные в график');
+          console.log('Обновлены исторические данные в график');
+          // Обновляем earliestTime и latestTime
+          this.earliestTime = this.historicalData[0].time;
+          this.latestTime = this.historicalData[this.historicalData.length - 1].time;
+          this.isLoading = false;
         } else {
           console.error('Серия свечей не инициализирована для исторических данных');
         }
@@ -118,6 +138,8 @@ export default {
         if (this.candlestickSeries) {
           this.candlestickSeries.update(candlestickData);
           console.log('Обновлена серия свечей');
+          // Обновляем latestTime
+          this.latestTime = candlestickData.time;
         } else {
           console.error('Серия свечей не инициализирована');
         }
@@ -131,6 +153,31 @@ export default {
         };
         this.websocket.send(JSON.stringify(subscription));
         console.log('Отправлена подписка:', subscription);
+      }
+    },
+    loadInitialHistoricalData() {
+      const now = Math.floor(Date.now() / 1000); // Текущее время в секундах
+      const sevenDaysAgo = now - 7 * 24 * 60 * 60; // 7 дней назад в секундах
+      this.requestHistoricalData(sevenDaysAgo * 1000, now * 1000); // Конвертируем в миллисекунды
+    },
+    loadMoreHistoricalData() {
+      if (this.isLoading) return;
+      this.isLoading = true;
+
+      const endTime = this.earliestTime * 1000; // В миллисекундах
+      const startTime = endTime - 7 * 24 * 60 * 60 * 1000; // Загружаем ещё 7 дней назад
+      this.requestHistoricalData(startTime, endTime);
+    },
+    requestHistoricalData(startTime, endTime) {
+      if (this.websocket && this.websocket.readyState === WebSocket.OPEN) {
+        const request = {
+          symbol: this.selectedSymbol,
+          interval: this.selectedInterval,
+          start_time: startTime,
+          end_time: endTime,
+        };
+        this.websocket.send(JSON.stringify(request));
+        console.log('Запрошены исторические данные:', request);
       }
     },
   },

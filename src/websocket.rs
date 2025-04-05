@@ -1,30 +1,27 @@
 use actix::{Actor, ActorContext, AsyncContext, StreamHandler, Handler};
 use actix_web_actors::ws;
 use serde::{Deserialize};
-use std::sync::Arc;
-use tokio::sync::Mutex;
 use actix::Addr;
+use actix_web::web;
 
-use crate::binance::{ClientMessage};
+use crate::binance::{fetch_historical_data, HistoricalRequest};
+use crate::app_state::AppState;
 
-#[allow(dead_code)]
 #[derive(Deserialize, Debug)]
 struct Subscription {
+    #[allow(dead_code)]
     symbol: String,
+    #[allow(dead_code)]
     interval: String,
 }
 
-pub struct AppState {
-    pub clients: Arc<Mutex<Vec<Addr<WebSocketActor>>>>,
-}
-
 pub struct WebSocketActor {
-    app_state: Arc<AppState>,
+    app_state: web::Data<AppState>,
     addr: Option<Addr<WebSocketActor>>,
 }
 
 impl WebSocketActor {
-    pub fn new(app_state: Arc<AppState>) -> Self {
+    pub fn new(app_state: web::Data<AppState>) -> Self {
         let actor = WebSocketActor {
             app_state,
             addr: None,
@@ -67,6 +64,10 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WebSocketActor {
                 // Парсим сообщение от клиента
                 if let Ok(subscription) = serde_json::from_str::<Subscription>(&text) {
                     println!("Получена подписка: {:?}", subscription);
+                } else if let Ok(request) = serde_json::from_str::<HistoricalRequest>(&text) {
+                    println!("Получен запрос на исторические данные: {:?}", request);
+                    let state = self.app_state.clone();
+                    tokio::spawn(fetch_historical_data(state, request));
                 }
             }
             Ok(ws::Message::Close(_)) => {
@@ -85,3 +86,7 @@ impl Handler<ClientMessage> for WebSocketActor {
         ctx.text(msg.0);
     }
 }
+
+#[derive(actix::Message)]
+#[rtype(result = "()")]
+pub struct ClientMessage(pub String);

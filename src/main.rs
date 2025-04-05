@@ -1,28 +1,32 @@
 use actix_web::{web, App, HttpServer};
-use actix_files::Files;
-use std::sync::Arc;
-use tokio::sync::Mutex;
+use log::info;
 
+mod app_state;
 mod binance;
+mod models;
 mod routes;
 mod websocket;
-mod models;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    let app_state = web::Data::new(websocket::AppState {
-        clients: Arc::new(Mutex::new(Vec::new())),
+    unsafe {
+        std::env::set_var("RUST_LOG", "info");
+    }
+    env_logger::init();
+
+    let app_state = web::Data::new(app_state::AppState {
+        clients: std::sync::Arc::new(tokio::sync::Mutex::new(Vec::new())),
     });
 
-    tokio::spawn(binance::connect_to_binance(app_state.clone()));
+    // Запускаем соединение с Binance
+    binance::connect_to_binance(app_state.clone()).await;
 
-    println!("Запуск сервера на http://127.0.0.1:3000");
-
+    info!("Starting server at http://127.0.0.1:3000");
     HttpServer::new(move || {
         App::new()
             .app_data(app_state.clone())
-            .service(web::resource("/ws").route(web::get().to(routes::ws_handler)))
-            .service(Files::new("/", "./static").index_file("index.html"))
+            .service(routes::websocket)
+            .service(actix_files::Files::new("/", "./static").index_file("index.html"))
     })
     .bind("127.0.0.1:3000")?
     .run()

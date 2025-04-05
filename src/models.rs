@@ -1,10 +1,7 @@
-use serde::{Deserialize};
+use serde::Deserialize;
 
 #[derive(Deserialize)]
 pub struct KlineEvent {
-    #[serde(rename = "e")]
-    #[allow(dead_code)]
-    pub event_type: String,
     #[serde(rename = "E")]
     pub event_time: u64,
     #[serde(rename = "s")]
@@ -17,10 +14,13 @@ pub struct Kline {
     #[serde(rename = "t")]
     pub start_time: u64,
     #[serde(rename = "T")]
+    #[allow(dead_code)]
     pub close_time: u64,
     #[serde(rename = "s")]
+    #[allow(dead_code)]
     pub symbol: String,
     #[serde(rename = "i")]
+    #[allow(dead_code)]
     pub interval: String,
     #[serde(rename = "o")]
     pub open: String,
@@ -31,8 +31,10 @@ pub struct Kline {
     #[serde(rename = "c")]
     pub close: String,
     #[serde(rename = "v")]
+    #[allow(dead_code)]
     pub volume: String,
     #[serde(rename = "x")]
+    #[allow(dead_code)]
     pub is_closed: bool,
 }
 
