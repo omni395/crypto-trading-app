@@ -21,6 +21,8 @@ export default {
       earliestTime: null,
       latestTime: null,
       isLoading: false,
+      currentRequest: null, // Храним текущий запрос
+      expectedCandles: 1000, // Ожидаемое количество свечей (по лимиту Binance API)
     };
   },
   mounted() {
@@ -110,12 +112,16 @@ export default {
         const close = parseFloat(message.close);
         const time = message.time;
 
+        if (typeof time !== 'number' || isNaN(time)) {
+          console.warn('Некорректное значение time:', time);
+          return;
+        }
+
         if (
           isNaN(open) || open <= 0 ||
           isNaN(high) || high <= 0 ||
           isNaN(low) || low <= 0 ||
-          isNaN(close) || close <= 0 ||
-          !time
+          isNaN(close) || close <= 0
         ) {
           console.warn('Пропущена некорректная свеча:', { time, open, high, low, close });
           return;
@@ -130,25 +136,31 @@ export default {
         };
         this.historicalData.push(candlestickData);
         console.log('Добавлены исторические данные:', candlestickData);
+        console.log('Текущее количество свечей:', this.historicalData.length);
 
-        // Сортируем данные по времени (по возрастанию) и обновляем график
-        this.historicalData.sort((a, b) => a.time - b.time); // Сортировка по возрастанию
-        if (this.candlestickSeries) {
-          this.candlestickSeries.setData(this.historicalData);
-          console.log('Обновлены исторические данные в график');
-          // Обновляем earliestTime и latestTime
-          this.earliestTime = this.historicalData[0].time; // Самая ранняя свеча
-          this.latestTime = this.historicalData[this.historicalData.length - 1].time; // Самая поздняя свеча
-          this.isLoading = false;
+        // Проверяем, получили ли мы ожидаемое количество свечей
+        if (this.currentRequest && this.historicalData.length >= this.expectedCandles) {
+          console.log('Все свечи получены, обновляем график');
+          // Сортируем данные по времени (по возрастанию) и обновляем график
+          this.historicalData.sort((a, b) => a.time - b.time);
+          if (this.candlestickSeries) {
+            this.candlestickSeries.setData(this.historicalData);
+            console.log('Обновлены исторические данные в график');
+            // Обновляем earliestTime и latestTime
+            this.earliestTime = this.historicalData[0].time; // Самая ранняя свеча
+            this.latestTime = this.historicalData[this.historicalData.length - 1].time; // Самая поздняя свеча
+            this.isLoading = false;
 
-          // Фокусируемся на последней свече
-          const visibleRange = {
-            from: this.historicalData[this.historicalData.length - 1].time - 60 * 60, // На час раньше последней свечи
-            to: this.historicalData[this.historicalData.length - 1].time + 60 * 60, // На час позже последней свечи
-          };
-          this.chart.timeScale().setVisibleRange(visibleRange);
-        } else {
-          console.error('Серия свечей не инициализирована для исторических данных');
+            // Фокусируемся на последней свече
+            const visibleRange = {
+              from: this.historicalData[this.historicalData.length - 1].time - 60 * 60, // На час раньше последней свечи
+              to: this.historicalData[this.historicalData.length - 1].time + 60 * 60, // На час позже последней свечи
+            };
+            this.chart.timeScale().setVisibleRange(visibleRange);
+          } else {
+            console.error('Серия свечей не инициализирована для исторических данных');
+          }
+          this.currentRequest = null; // Сбрасываем текущий запрос
         }
       } else if (message.event_type === 'kline') {
         // Временно закомментировано для тестов
@@ -184,6 +196,7 @@ export default {
       const now = Math.floor(new Date('2024-02-07').getTime() / 1000); // 7 февраля 2024
       const sevenDaysAgo = now - 7 * 24 * 60 * 60; // 31 января 2024
       console.log('Текущие значения времени:', { now, sevenDaysAgo });
+      this.historicalData = []; // Очищаем перед новым запросом
       this.requestHistoricalData(sevenDaysAgo * 1000, now * 1000); // Конвертируем в миллисекунды
     },
     loadMoreHistoricalData() {
@@ -202,6 +215,7 @@ export default {
           start_time: startTime,
           end_time: endTime,
         };
+        this.currentRequest = request; // Сохраняем текущий запрос
         this.websocket.send(JSON.stringify(request));
         console.log('Запрошены исторические данные:', request);
       }
