@@ -61,13 +61,16 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WebSocketActor {
     fn handle(&mut self, msg: Result<ws::Message, ws::ProtocolError>, ctx: &mut Self::Context) {
         match msg {
             Ok(ws::Message::Text(text)) => {
+                println!("Получено текстовое сообщение: {}", text);
                 // Парсим сообщение от клиента
-                if let Ok(subscription) = serde_json::from_str::<Subscription>(&text) {
-                    println!("Получена подписка: {:?}", subscription);
-                } else if let Ok(request) = serde_json::from_str::<HistoricalRequest>(&text) {
+                if let Ok(request) = serde_json::from_str::<HistoricalRequest>(&text) {
                     println!("Получен запрос на исторические данные: {:?}", request);
                     let state = self.app_state.clone();
                     tokio::spawn(fetch_historical_data(state, request));
+                } else if let Ok(subscription) = serde_json::from_str::<Subscription>(&text) {
+                    println!("Получена подписка: {:?}", subscription);
+                } else {
+                    println!("Не удалось десериализовать сообщение: {}", text);
                 }
             }
             Ok(ws::Message::Close(_)) => {

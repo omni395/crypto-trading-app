@@ -8,7 +8,7 @@ use crate::app_state::AppState;
 use crate::websocket::ClientMessage;
 use crate::models::{KlineEvent, DepthEvent};
 
-#[derive(Deserialize, Debug)] // Добавляем Debug
+#[derive(Deserialize, Debug)]
 pub struct HistoricalRequest {
     pub symbol: String,
     pub interval: String,
@@ -23,32 +23,58 @@ pub async fn connect_to_binance(state: web::Data<AppState>) {
 
 pub async fn fetch_historical_data(state: web::Data<AppState>, request: HistoricalRequest) {
     let client = reqwest::Client::new();
+    let symbol = request.symbol.to_uppercase(); // Преобразуем symbol в верхний регистр
     let url = format!(
         "https://api.binance.com/api/v3/klines?symbol={}&interval={}&startTime={}&endTime={}&limit=1000",
-        request.symbol, request.interval, request.start_time, request.end_time
+        symbol, request.interval, request.start_time, request.end_time
     );
+    println!("Отправлен запрос на исторические данные: {}", url);
 
     match client.get(&url).send().await {
         Ok(response) => {
-            if let Ok(data) = response.json::<Vec<Vec<serde_json::Value>>>().await {
-                for kline in data {
-                    let candlestick_data = json!({
-                        "event_type": "historical_kline",
-                        "time": kline[0].as_i64().unwrap() / 1000, // Конвертируем в секунды
-                        "open": kline[1].as_str().unwrap().parse::<f64>().unwrap_or(0.0),
-                        "high": kline[2].as_str().unwrap().parse::<f64>().unwrap_or(0.0),
-                        "low": kline[3].as_str().unwrap().parse::<f64>().unwrap_or(0.0),
-                        "close": kline[4].as_str().unwrap().parse::<f64>().unwrap_or(0.0),
-                        "volume": kline[5].as_str().unwrap().parse::<f64>().unwrap_or(0.0),
-                    });
+            println!("Получен ответ от Binance: {:?}", response.status());
+            if response.status().is_success() {
+                match response.json::<Vec<Vec<serde_json::Value>>>().await {
+                    Ok(data) => {
+                        println!("Получено {} свечей", data.len());
+                        for kline in data {
+                            let time = kline[0].as_i64().unwrap() / 1000;
+                            let open = kline[1].as_str().unwrap().parse::<f64>().unwrap_or(0.0);
+                            let high = kline[2].as_str().unwrap().parse::<f64>().unwrap_or(0.0);
+                            let low = kline[3].as_str().unwrap().parse::<f64>().unwrap_or(0.0);
+                            let close = kline[4].as_str().unwrap().parse::<f64>().unwrap_or(0.0);
+                            let volume = kline[5].as_str().unwrap().parse::<f64>().unwrap_or(0.0);
 
-                    let clients = state.clients.lock().await;
-                    for client in clients.iter() {
-                        client.do_send(ClientMessage(candlestick_data.to_string()));
+                            // Проверяем, есть ли нулевые значения
+                            if open == 0.0 || high == 0.0 || low == 0.0 || close == 0.0 {
+                                println!("Обнаружена свеча с нулевыми значениями: time={}, open={}, high={}, low={}, close={}", time, open, high, low, close);
+                                continue; // Пропускаем свечу с нулевыми значениями
+                            }
+
+                            let candlestick_data = json!({
+                                "event_type": "historical_kline",
+                                "time": time,
+                                "open": open,
+                                "high": high,
+                                "low": low,
+                                "close": close,
+                                "volume": volume,
+                            });
+
+                            let clients = state.clients.lock().await;
+                            for client in clients.iter() {
+                                client.do_send(ClientMessage(candlestick_data.to_string()));
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        println!("Ошибка десериализации исторических данных: {:?}", e);
                     }
                 }
             } else {
-                println!("Ошибка десериализации исторических данных");
+                let status = response.status();
+                let error_body = response.text().await.unwrap_or_default();
+                println!("Ошибка от Binance API: status={}, body={}", status, error_body);
             }
         }
         Err(e) => {
