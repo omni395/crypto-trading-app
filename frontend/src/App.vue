@@ -86,7 +86,7 @@ export default {
       console.log('Размеры контейнера:', chartContainer.clientWidth, chartContainer.clientHeight);
     },
     setupWebSocket() {
-      this.websocket = new WebSocket('ws://localhost:3000/ws');
+      this.websocket = new WebSocket('ws://' + window.location.host + '/ws');
       this.websocket.onopen = () => {
         console.log('Подключено к локальному WebSocket');
         this.updateSubscription();

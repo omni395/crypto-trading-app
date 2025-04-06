@@ -1,28 +1,28 @@
-version: '3.8'
-
 services:
   server:
     build:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "3000:3000" # Сервер будет доступен на localhost:3000
+      - "3000:3000"
     volumes:
-      - .:/app # Монтируем локальную директорию для разработки
+      - .:/app
 
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
     ports:
-      - "8080:8080" # Фронтенд будет доступен на localhost:8080
+      - "8080:8080"
     volumes:
-      - ./frontend:/app # Монтируем директорию фронтенда
-      - /app/node_modules # Сохраняем node_modules в контейнере
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - NODE_ENV=development # Добавляем эту строку
     depends_on:
-      - server # Фронтенд стартует после сервера
+      - server
 
   redis:
     image: redis:7
     ports:
-      - "6379:6379" # Redis будет доступен на localhost:6379
+      - "6379:6379"
