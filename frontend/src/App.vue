@@ -1,7 +1,7 @@
 <template>
-  <div class="app">
-    <h1>Crypto Trading App</h1>
-    <div id="chart" ref="chartContainer"></div>
+  <div class="container mx-auto p-4">
+    <h1 class="text-2xl font-bold mb-4">Crypto Trading App</h1>
+    <div ref="chartContainer" class="w-full h-[500px]"></div>
   </div>
 </template>
 
@@ -86,7 +86,7 @@ export default {
       console.log('Размеры контейнера:', chartContainer.clientWidth, chartContainer.clientHeight);
     },
     setupWebSocket() {
-      this.websocket = new WebSocket('ws://' + window.location.host + '/ws');
+      this.websocket = new WebSocket('ws://' + window.location.host + ':3000/ws');
       this.websocket.onopen = () => {
         console.log('Подключено к локальному WebSocket');
         this.updateSubscription();
