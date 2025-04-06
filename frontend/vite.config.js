@@ -10,6 +10,6 @@ export default defineConfig({
     publicDir: 'public', // Указываем папку public
   },
   server: {
-    port: 3001,
+    port: 8080, // Порт для разработки
   },
 });
