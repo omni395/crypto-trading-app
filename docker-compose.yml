@@ -7,6 +7,9 @@ services:
       - "3000:3000"
     volumes:
       - .:/app
+      - /app/target
+    environment:
+      - RUST_LOG=info
 
   frontend:
     build:
@@ -23,6 +26,8 @@ services:
       - server
 
   redis:
-    image: redis:latest
+    image: redis:7
     ports:
       - "6379:6379"
+    volumes:
+      - ./redis-data:/data # Сохраняем данные Redis на хосте
