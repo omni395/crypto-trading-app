@@ -2,20 +2,24 @@
   <div class="flex flex-row h-screen p-4 gap-4">
     <!-- Левая часть (5/6 ширины) -->
     <div class="flex flex-col w-5/6 h-full gap-4">
-      <!-- График (2/3 высоты) -->
-      <div class="h-2/3 bg-gray-800 rounded-lg">
+      <!-- График (60% высоты) -->
+      <div class="h-[60%] bg-gray-800 rounded-lg">
         <Chart />
       </div>
-  <!-- Пустые блоки (по 1/6 высоты каждый) -->
-  <div class="flex flex-row w-5/6 h-full gap-4">
-    <div class="flex-1 bg-gray-800 rounded-lg">
-      <EmptyBlock />
+      <!-- Три контейнера-заглушки (40% высоты, одинаковой ширины) -->
+      <div class="flex flex-row h-[40%] gap-4">
+        <div class="flex-1 bg-gray-800 rounded-lg">
+          <EmptyBlock />
+        </div>
+        <div class="flex-1 bg-gray-800 rounded-lg">
+          <EmptyBlock />
+        </div>
+        <div class="flex-1 bg-gray-800 rounded-lg">
+          <EmptyBlock />
+        </div>
+      </div>
     </div>
-    <div class="flex-1 bg-gray-800 rounded-lg">
-      <EmptyBlock />
-    </div>
-  </div>
-    </div>
+
     <!-- Правая часть (1/6 ширины) -->
     <div class="flex flex-col w-1/6 h-full gap-4">
       <!-- Фильтры (1/6 высоты) -->

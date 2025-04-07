@@ -77,7 +77,7 @@ pub async fn fetch_historical_data(
             let volume = kline[5].as_str().unwrap().parse::<f64>().unwrap_or(0.0);
 
             json!({
-                "event_type": "historical_kline",
+                "event_type": "historical_kline",
                 "time": time,
                 "open": open,
                 "high": high,

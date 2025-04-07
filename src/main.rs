@@ -5,11 +5,13 @@ use actix_cors::Cors;
 mod app_state;
 mod binance;
 mod routes;
+mod websocket; // Добавляем модуль websocket
+mod models; // Добавляем модуль models
 
 // Импортируем нужные элементы из модулей
 use app_state::AppState;
 use binance::connect_to_binance;
-use routes::websocket;
+use routes::configure_websocket; // Обновляем имя функции
 
 #[actix_web::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -36,7 +38,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         App::new()
             .app_data(app_state.clone())
             .wrap(cors)
-            .configure(websocket) // Используем функцию websocket из routes
+            .configure(configure_websocket) // Используем переименованную функцию
     })
     .bind(("0.0.0.0", 3000))?
     .run()
