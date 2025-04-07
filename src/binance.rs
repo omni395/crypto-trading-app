@@ -30,6 +30,7 @@ pub async fn fetch_historical_data(state: web::Data<AppState>, request: Historic
     let cached_data: Option<String> = conn.get(&key).ok();
 
     let historical_data = if let Some(data) = cached_data {
+        println!("Данные взяты из кэша Redis");
         serde_json::from_str(&data).unwrap_or_default()
     } else {
         let client = reqwest::Client::new();
@@ -43,7 +44,7 @@ pub async fn fetch_historical_data(state: web::Data<AppState>, request: Historic
         let response = client.get(&url).send().await.unwrap();
         let data: Vec<Vec<serde_json::Value>> = response.json().await.unwrap();
         let historical_data: Vec<serde_json::Value> = data.into_iter().map(|kline| {
-            let time = kline[0].as_i64().unwrap() / 1000;
+            let time = kline[0].as_i64().unwrap() / 1000; // Убедимся, что время в секундах
             let open = kline[1].as_str().unwrap().parse::<f64>().unwrap_or(0.0);
             let high = kline[2].as_str().unwrap().parse::<f64>().unwrap_or(0.0);
             let low = kline[3].as_str().unwrap().parse::<f64>().unwrap_or(0.0);
@@ -73,7 +74,9 @@ pub async fn fetch_historical_data(state: web::Data<AppState>, request: Historic
     })).unwrap();
 
     let clients = state.clients.lock().await;
+    println!("Количество клиентов для отправки исторических данных: {}", clients.len());
     for client in clients.iter() {
+        println!("Отправка исторических данных клиенту с ID: {}", client.id);
         client.send_message(message.clone());
     }
 }

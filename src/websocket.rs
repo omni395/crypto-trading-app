@@ -55,7 +55,8 @@ impl actix::Actor for WsSession {
         let app_state = self.app_state.clone();
         ctx.spawn(actix::fut::wrap_future(async move {
             let mut clients = app_state.clients.lock().await;
-            clients.push(session);
+            clients.push(session.clone());
+            println!("Клиент добавлен, ID: {}, общее количество клиентов: {}", session.id, clients.len());
         }));
     }
 
@@ -65,6 +66,7 @@ impl actix::Actor for WsSession {
         ctx.spawn(actix::fut::wrap_future(async move {
             let mut clients = app_state.clients.lock().await;
             clients.retain(|client| client.id != id);
+            println!("Клиент удалён, ID: {}, общее количество клиентов: {}", id, clients.len());
         }));
     }
 }
@@ -91,6 +93,8 @@ impl actix::StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession 
                     };
                     let app_state = self.app_state.clone();
                     ctx.spawn(actix::fut::wrap_future(async move {
+                        // Добавим небольшую задержку, чтобы клиент успел добавиться в список
+                        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
                         crate::binance::fetch_historical_data(app_state, request).await;
                     }));
                 }
