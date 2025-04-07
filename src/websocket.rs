@@ -2,7 +2,6 @@ use actix_web::{web, HttpRequest, HttpResponse};
 use actix_web_actors::ws;
 use actix::AsyncContext;
 use crate::app_state::AppState;
-use crate::binance::HistoricalRequest;
 use std::sync::Arc;
 
 pub async fn ws_index(
@@ -80,26 +79,7 @@ impl actix::Handler<ClientMessage> for WsSession {
 }
 
 impl actix::StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession {
-    fn handle(&mut self, msg: Result<ws::Message, ws::ProtocolError>, ctx: &mut Self::Context) {
-        match msg {
-            Ok(ws::Message::Text(text)) => {
-                let message: serde_json::Value = serde_json::from_str(&text).unwrap_or_default();
-                if message["type"] == "historical" {
-                    let request = HistoricalRequest {
-                        symbol: "BTCUSDT".to_string(),
-                        interval: "1m".to_string(),
-                        start_time: message["startTime"].as_i64().unwrap_or(0),
-                        end_time: message["endTime"].as_i64().unwrap_or(0),
-                    };
-                    let app_state = self.app_state.clone();
-                    ctx.spawn(actix::fut::wrap_future(async move {
-                        // Добавим небольшую задержку, чтобы клиент успел добавиться в список
-                        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-                        crate::binance::fetch_historical_data(app_state, request).await;
-                    }));
-                }
-            }
-            _ => {}
-        }
+    fn handle(&mut self, _msg: Result<ws::Message, ws::ProtocolError>, _ctx: &mut Self::Context) {
+        // Больше не обрабатываем исторические данные через WebSocket
     }
 }

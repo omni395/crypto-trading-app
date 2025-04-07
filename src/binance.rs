@@ -1,13 +1,15 @@
 use serde_json::json;
 use futures_util::StreamExt;
-use actix_web::web;
+use actix_web::{web, HttpResponse};
 use reqwest;
 use serde::Deserialize;
 use crate::app_state::AppState;
+#[allow(unused_imports)] // Подавляем предупреждение
 use crate::websocket::ClientMessage;
 use crate::models::{KlineEvent, DepthEvent};
 use redis::Commands;
 
+// Остальной код остаётся без изменений
 #[derive(Deserialize, Debug)]
 pub struct HistoricalRequest {
     pub symbol: String,
@@ -21,7 +23,30 @@ pub async fn connect_to_binance(state: web::Data<AppState>) {
     tokio::spawn(start_binance_depth_ws(state.clone()));
 }
 
-pub async fn fetch_historical_data(state: web::Data<AppState>, request: HistoricalRequest) {
+pub async fn get_historical_data(
+    query: web::Query<HistoricalRequest>,
+    state: web::Data<AppState>,
+) -> HttpResponse {
+    let request = HistoricalRequest {
+        symbol: query.symbol.clone(),
+        interval: query.interval.clone(),
+        start_time: query.start_time,
+        end_time: query.end_time,
+    };
+
+    match fetch_historical_data(state, request).await {
+        Ok(historical_data) => HttpResponse::Ok().json(json!({
+            "type": "historical",
+            "data": historical_data
+        })),
+        Err(e) => HttpResponse::InternalServerError().body(format!("Error: {:?}", e)),
+    }
+}
+
+pub async fn fetch_historical_data(
+    state: web::Data<AppState>,
+    request: HistoricalRequest,
+) -> Result<Vec<serde_json::Value>, Box<dyn std::error::Error>> {
     let mut conn = state.redis_client
         .get_connection()
         .expect("Failed to connect to Redis");
@@ -41,8 +66,8 @@ pub async fn fetch_historical_data(state: web::Data<AppState>, request: Historic
         );
         println!("Отправлен запрос на исторические данные: {}", url);
 
-        let response = client.get(&url).send().await.unwrap();
-        let data: Vec<Vec<serde_json::Value>> = response.json().await.unwrap();
+        let response = client.get(&url).send().await?;
+        let data: Vec<Vec<serde_json::Value>> = response.json().await?;
         let historical_data: Vec<serde_json::Value> = data.into_iter().map(|kline| {
             let time = kline[0].as_i64().unwrap() / 1000; // Убедимся, что время в секундах
             let open = kline[1].as_str().unwrap().parse::<f64>().unwrap_or(0.0);
@@ -68,17 +93,7 @@ pub async fn fetch_historical_data(state: web::Data<AppState>, request: Historic
         historical_data
     };
 
-    let message = serde_json::to_string(&json!({
-        "type": "historical",
-        "data": historical_data
-    })).unwrap();
-
-    let clients = state.clients.lock().await;
-    println!("Количество клиентов для отправки исторических данных: {}", clients.len());
-    for client in clients.iter() {
-        println!("Отправка исторических данных клиенту с ID: {}", client.id);
-        client.send_message(message.clone());
-    }
+    Ok(historical_data)
 }
 
 pub async fn start_binance_ws(state: web::Data<AppState>) {
