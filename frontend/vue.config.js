@@ -3,9 +3,6 @@ module.exports = {
     port: 8080,
     hot: false,
     liveReload: true,
-    // client: {
-    //   webSocketURL: 'ws://127.0.0.1:8080/ws'
-    // }
   },
   publicPath: '/',
   outputDir: '../static',
@@ -20,7 +17,6 @@ module.exports = {
   },
   chainWebpack: (config) => {
     config.plugin('define').tap((args) => {
-      // Добавляем process.env
       args[0]['process.env'] = JSON.stringify({
         NODE_ENV: process.env.NODE_ENV || 'development',
         VUE_APP_ENV: 'browser',

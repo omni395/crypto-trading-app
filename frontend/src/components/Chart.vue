@@ -26,8 +26,10 @@ export default {
     });
     this.resizeObserver.observe(this.$refs.chartContainer);
 
-    // Пробуем инициализировать график с несколькими попытками
-    this.tryInitChart();
+    // Ждём, пока DOM полностью отрендерится, используя requestAnimationFrame
+    requestAnimationFrame(() => {
+      this.tryInitChart();
+    });
   },
   methods: {
     tryInitChart(attempt = 0) {
@@ -36,15 +38,20 @@ export default {
       const height = chartContainer.clientHeight;
       console.log(`Попытка ${attempt + 1}: Размеры контейнера: ${width}x${height}`);
 
+      // Дополнительные логи для отладки
+      console.log("Стили контейнера:", window.getComputedStyle(chartContainer));
+      console.log("Родительский элемент:", chartContainer.parentElement);
+      console.log("Стили родителя:", window.getComputedStyle(chartContainer.parentElement));
+
       if (width > 0 && height > 0) {
         this.initChart();
         this.setupWebSocket();
         this.requestHistoricalData();
-      } else if (attempt < 5) {
-        // Если размеры всё ещё 0, пробуем снова через 100 мс, максимум 5 попыток
+      } else if (attempt < 10) {
+        // Увеличиваем количество попыток до 10 и интервал до 500 мс
         setTimeout(() => {
           this.tryInitChart(attempt + 1);
-        }, 100);
+        }, 500);
       } else {
         console.error("Не удалось инициализировать график: размеры контейнера остались 0x0");
       }

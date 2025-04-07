@@ -3,7 +3,7 @@
     <!-- Левая часть (5/6 ширины) -->
     <div class="flex flex-col w-5/6 h-full gap-4">
       <!-- График (60% высоты) -->
-      <div class="h-[60%] bg-gray-800 rounded-lg">
+      <div class="h-[60%] bg-gray-800 rounded-lg" style="min-height: 300px; min-width: 300px;">
         <Chart />
       </div>
       <!-- Три контейнера-заглушки (40% высоты, одинаковой ширины) -->
