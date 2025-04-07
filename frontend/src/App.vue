@@ -17,6 +17,8 @@ export default {
       websocket: null,
       symbol: "btcusdt",
       interval: "1m",
+      earliestTime: null, // Для отслеживания самого раннего времени на графике
+      isLoading: false, // Флаг, чтобы избежать множественных запросов
     };
   },
   mounted() {
@@ -56,6 +58,15 @@ export default {
         wickDownColor: "#ef5350",
       });
 
+      // Добавляем обработчик события прокрутки
+      this.chart.timeScale().subscribeVisibleTimeRangeChange(() => {
+        const timeRange = this.chart.timeScale().getVisibleLogicalRange();
+        if (timeRange && timeRange.from < 0 && !this.isLoading) {
+          // Пользователь прокрутил график назад
+          this.loadMoreHistoricalData();
+        }
+      });
+
       console.log("График инициализирован:", this.chart);
       console.log("Серия свечей инициализирована:", this.candlestickSeries);
     },
@@ -63,7 +74,6 @@ export default {
       this.websocket = new WebSocket("ws://127.0.0.1:3000/ws");
       this.websocket.onopen = () => {
         console.log("Подключено к локальному WebSocket");
-        // Вызываем методы только после того, как WebSocket открыт
         this.subscribe();
         this.requestHistoricalData();
       };
@@ -106,6 +116,34 @@ export default {
         start_time: request.startTime,
         end_time: request.endTime,
       });
+
+      // Устанавливаем начальное значение earliestTime
+      this.earliestTime = startTime;
+    },
+    loadMoreHistoricalData() {
+      if (this.isLoading) return;
+      this.isLoading = true;
+
+      const newEndTime = this.earliestTime * 1000; // Конец нового диапазона — это текущее начало
+      const newStartTime = (this.earliestTime - 60 * 60 * 24) * 1000; // Ещё 24 часа назад
+
+      const request = {
+        type: "historical",
+        symbol: this.symbol,
+        interval: this.interval,
+        startTime: newStartTime,
+        endTime: newEndTime,
+      };
+      this.websocket.send(JSON.stringify(request));
+      console.log("Запрошены дополнительные исторические данные:", {
+        symbol: this.symbol,
+        interval: this.interval,
+        start_time: newStartTime,
+        end_time: newEndTime,
+      });
+
+      // Обновляем earliestTime
+      this.earliestTime = newStartTime / 1000;
     },
     handleWebSocketMessage(message) {
       console.log("Обработка сообщения:", message);
@@ -131,7 +169,22 @@ export default {
           close: parseFloat(kline.close),
         }));
         console.log("Установка исторических данных:", historicalData);
-        this.candlestickSeries.setData(historicalData);
+
+        // Если это дополнительные данные, добавляем их, а не заменяем
+        if (this.candlestickSeries.data().length > 0) {
+          const existingData = this.candlestickSeries.data();
+          const newData = historicalData.filter(
+            (newCandle) =>
+              !existingData.some(
+                (existingCandle) => existingCandle.time === newCandle.time
+              )
+          );
+          this.candlestickSeries.setData([...newData, ...existingData]);
+        } else {
+          this.candlestickSeries.setData(historicalData);
+        }
+
+        this.isLoading = false; // Снимаем флаг загрузки
       } else {
         console.log("Неизвестный тип сообщения:", message);
       }
