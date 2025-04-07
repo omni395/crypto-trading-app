@@ -18,4 +18,5 @@ tokio-stream = "0.1"
 futures-util = "0.3.31"
 env_logger = "0.11.5"
 log = "0.4"
-reqwest = { version = "0.12.7", features = ["json"] } # Добавляем reqwest
+reqwest = { version = "0.12.7", features = ["json"] }
+redis = "0.25"
