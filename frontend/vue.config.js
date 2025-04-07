@@ -1,8 +1,11 @@
 module.exports = {
   devServer: {
     port: 8080,
-    hot: true, // Включаем HMR
-    liveReload: true // Включаем live-reload
+    hot: false,
+    liveReload: true,
+    client: {
+      webSocketURL: 'ws://127.0.0.1:8080/ws'
+    }
   },
   publicPath: '/',
   outputDir: '../static',
