@@ -10,3 +10,6 @@ compact vdisk
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=Europe/Kiev
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+
+
+this.websocket = new WebSocket('ws://' + window.location.hostname + ':3000/ws');

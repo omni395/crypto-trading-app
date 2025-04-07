@@ -1,5 +1,4 @@
-use actix_cors::Cors; // Добавляем для CORS
-use actix_web::{web, App, HttpServer};
+use actix_web::{App, HttpServer};
 use log::info;
 
 mod app_state;
@@ -10,33 +9,22 @@ mod websocket;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    unsafe {
-        std::env::set_var("RUST_LOG", "info");
-    }
+    std::env::set_var("RUST_LOG", "info");
     env_logger::init();
 
-    let app_state = web::Data::new(app_state::AppState {
-        clients: std::sync::Arc::new(tokio::sync::Mutex::new(Vec::new())),
-    });
+    let app_state = actix_web::web::Data::new(app_state::AppState::new());
+    let app_state_clone = app_state.clone();
 
-    // Запускаем соединение с Binance
-    binance::connect_to_binance(app_state.clone()).await;
+    let server = HttpServer::new(move || {
+        App::new()
+            .app_data(app_state.clone())
+            .configure(routes::websocket)
+            .wrap(actix_web::middleware::Logger::default())
+    })
+    .workers(8)
+    .bind("0.0.0.0:3000")?;
 
     info!("Starting server at http://127.0.0.1:3000");
-    HttpServer::new(move || {
-        let cors = Cors::default()
-            .allow_any_origin()
-            .allow_any_method()
-            .allow_any_header()
-            .supports_credentials();
-
-        App::new()
-            .wrap(cors) // Добавляем CORS
-            .app_data(app_state.clone())
-            .service(routes::websocket)
-            .service(actix_files::Files::new("/", "./static").index_file("index.html"))
-    })
-    .bind("0.0.0.0:3000")?
-    .run()
-    .await
+    tokio::spawn(binance::connect_to_binance(app_state_clone));
+    server.run().await
 }

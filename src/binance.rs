@@ -3,17 +3,17 @@ use futures_util::StreamExt;
 use actix_web::web;
 use reqwest;
 use serde::Deserialize;
-
 use crate::app_state::AppState;
 use crate::websocket::ClientMessage;
 use crate::models::{KlineEvent, DepthEvent};
+use redis::Commands;
 
 #[derive(Deserialize, Debug)]
 pub struct HistoricalRequest {
     pub symbol: String,
     pub interval: String,
-    pub start_time: i64, // В миллисекундах
-    pub end_time: i64,   // В миллисекундах
+    pub start_time: i64,
+    pub end_time: i64,
 }
 
 pub async fn connect_to_binance(state: web::Data<AppState>) {
@@ -22,64 +22,59 @@ pub async fn connect_to_binance(state: web::Data<AppState>) {
 }
 
 pub async fn fetch_historical_data(state: web::Data<AppState>, request: HistoricalRequest) {
-    let client = reqwest::Client::new();
-    let symbol = request.symbol.to_uppercase(); // Преобразуем symbol в верхний регистр
-    let url = format!(
-        "https://api.binance.com/api/v3/klines?symbol={}&interval={}&startTime={}&endTime={}&limit=1000",
-        symbol, request.interval, request.start_time, request.end_time
-    );
-    println!("Отправлен запрос на исторические данные: {}", url);
+    let mut conn = state.redis_client
+        .get_connection()
+        .expect("Failed to connect to Redis");
 
-    match client.get(&url).send().await {
-        Ok(response) => {
-            println!("Получен ответ от Binance: {:?}", response.status());
-            if response.status().is_success() {
-                match response.json::<Vec<Vec<serde_json::Value>>>().await {
-                    Ok(data) => {
-                        println!("Получено {} свечей", data.len());
-                        for kline in data {
-                            let time = kline[0].as_i64().unwrap() / 1000;
-                            let open = kline[1].as_str().unwrap().parse::<f64>().unwrap_or(0.0);
-                            let high = kline[2].as_str().unwrap().parse::<f64>().unwrap_or(0.0);
-                            let low = kline[3].as_str().unwrap().parse::<f64>().unwrap_or(0.0);
-                            let close = kline[4].as_str().unwrap().parse::<f64>().unwrap_or(0.0);
-                            let volume = kline[5].as_str().unwrap().parse::<f64>().unwrap_or(0.0);
+    let key = format!("historical:{}:{}", request.start_time, request.end_time);
+    let cached_data: Option<String> = conn.get(&key).ok();
 
-                            // Проверяем, есть ли нулевые значения
-                            if open == 0.0 || high == 0.0 || low == 0.0 || close == 0.0 {
-                                println!("Обнаружена свеча с нулевыми значениями: time={}, open={}, high={}, low={}, close={}", time, open, high, low, close);
-                                continue; // Пропускаем свечу с нулевыми значениями
-                            }
+    let historical_data = if let Some(data) = cached_data {
+        serde_json::from_str(&data).unwrap_or_default()
+    } else {
+        let client = reqwest::Client::new();
+        let symbol = request.symbol.to_uppercase();
+        let url = format!(
+            "https://api.binance.com/api/v3/klines?symbol={}&interval={}&startTime={}&endTime={}&limit=1000",
+            symbol, request.interval, request.start_time, request.end_time
+        );
+        println!("Отправлен запрос на исторические данные: {}", url);
 
-                            let candlestick_data = json!({
-                                "event_type": "historical_kline",
-                                "time": time,
-                                "open": open,
-                                "high": high,
-                                "low": low,
-                                "close": close,
-                                "volume": volume,
-                            });
+        let response = client.get(&url).send().await.unwrap();
+        let data: Vec<Vec<serde_json::Value>> = response.json().await.unwrap();
+        let historical_data: Vec<serde_json::Value> = data.into_iter().map(|kline| {
+            let time = kline[0].as_i64().unwrap() / 1000;
+            let open = kline[1].as_str().unwrap().parse::<f64>().unwrap_or(0.0);
+            let high = kline[2].as_str().unwrap().parse::<f64>().unwrap_or(0.0);
+            let low = kline[3].as_str().unwrap().parse::<f64>().unwrap_or(0.0);
+            let close = kline[4].as_str().unwrap().parse::<f64>().unwrap_or(0.0);
+            let volume = kline[5].as_str().unwrap().parse::<f64>().unwrap_or(0.0);
 
-                            let clients = state.clients.lock().await;
-                            for client in clients.iter() {
-                                client.do_send(ClientMessage(candlestick_data.to_string()));
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        println!("Ошибка десериализации исторических данных: {:?}", e);
-                    }
-                }
-            } else {
-                let status = response.status();
-                let error_body = response.text().await.unwrap_or_default();
-                println!("Ошибка от Binance API: status={}, body={}", status, error_body);
-            }
-        }
-        Err(e) => {
-            println!("Ошибка загрузки исторических данных: {:?}", e);
-        }
+            json!({
+                "event_type": "historical_kline",
+                "time": time,
+                "open": open,
+                "high": high,
+                "low": low,
+                "close": close,
+                "volume": volume,
+            })
+        }).collect();
+
+        let serialized_data = serde_json::to_string(&historical_data).unwrap();
+        conn.set_ex::<_, _, ()>(&key, serialized_data, 3600).ok();
+
+        historical_data
+    };
+
+    let message = serde_json::to_string(&json!({
+        "type": "historical",
+        "data": historical_data
+    })).unwrap();
+
+    let clients = state.clients.lock().await;
+    for client in clients.iter() {
+        client.send_message(message.clone());
     }
 }
 
@@ -111,9 +106,10 @@ pub async fn start_binance_ws(state: web::Data<AppState>) {
                                     }
                                 });
 
+                                let message = kline_json.to_string();
                                 let clients = state.clients.lock().await;
                                 for client in clients.iter() {
-                                    client.do_send(ClientMessage(kline_json.to_string()));
+                                    client.send_message(message.clone());
                                 }
                             }
                         }
@@ -152,9 +148,10 @@ pub async fn start_binance_depth_ws(state: web::Data<AppState>) {
                                     "asks": data.asks,
                                 });
 
+                                let message = depth_json.to_string();
                                 let clients = state.clients.lock().await;
                                 for client in clients.iter() {
-                                    client.do_send(ClientMessage(depth_json.to_string()));
+                                    client.send_message(message.clone());
                                 }
                             }
                         }

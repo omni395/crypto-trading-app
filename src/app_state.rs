@@ -1,9 +1,19 @@
-use actix::Addr;
-use tokio::sync::Mutex;
+use crate::websocket::WsSession;
+use redis::Client;
 use std::sync::Arc;
-use crate::websocket::WebSocketActor;
+use tokio::sync::Mutex;
 
-#[derive(Clone)]
 pub struct AppState {
-    pub clients: Arc<Mutex<Vec<Addr<WebSocketActor>>>>,
+    pub clients: Arc<Mutex<Vec<Arc<WsSession>>>>,
+    pub redis_client: Client,
+}
+
+impl AppState {
+    pub fn new() -> Self {
+        let redis_client = Client::open("redis://redis:6379").expect("Failed to connect to Redis");
+        AppState {
+            clients: Arc::new(Mutex::new(Vec::new())),
+            redis_client,
+        }
+    }
 }

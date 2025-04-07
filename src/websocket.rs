@@ -1,95 +1,101 @@
-use actix::{Actor, ActorContext, AsyncContext, StreamHandler, Handler};
+use actix_web::{web, HttpRequest, HttpResponse};
 use actix_web_actors::ws;
-use serde::{Deserialize};
-use actix::Addr;
-use actix_web::web;
-
-use crate::binance::{fetch_historical_data, HistoricalRequest};
+use actix::AsyncContext;
 use crate::app_state::AppState;
+use crate::binance::HistoricalRequest;
+use std::sync::Arc;
 
-#[derive(Deserialize, Debug)]
-struct Subscription {
-    #[allow(dead_code)]
-    symbol: String,
-    #[allow(dead_code)]
-    interval: String,
-}
-
-pub struct WebSocketActor {
+pub async fn ws_index(
+    req: HttpRequest,
+    stream: web::Payload,
     app_state: web::Data<AppState>,
-    addr: Option<Addr<WebSocketActor>>,
+) -> Result<HttpResponse, actix_web::Error> {
+    ws::start(WsSession::new(app_state), &req, stream)
 }
 
-impl WebSocketActor {
+pub struct WsSession {
+    pub app_state: web::Data<AppState>,
+    pub id: usize,
+    addr: Option<actix::Addr<Self>>,
+}
+
+impl WsSession {
     pub fn new(app_state: web::Data<AppState>) -> Self {
-        let actor = WebSocketActor {
+        WsSession {
             app_state,
+            id: rand::random(),
             addr: None,
-        };
-        actor
+        }
+    }
+
+    pub fn send_message(&self, message: String) {
+        if let Some(addr) = &self.addr {
+            addr.do_send(ClientMessage(message));
+        }
     }
 }
 
-impl Actor for WebSocketActor {
+#[derive(Debug)]
+pub struct ClientMessage(pub String);
+
+impl actix::Message for ClientMessage {
+    type Result = ();
+}
+
+impl actix::Actor for WsSession {
     type Context = ws::WebsocketContext<Self>;
 
     fn started(&mut self, ctx: &mut Self::Context) {
-        println!("WebSocketActor запущен");
-        // Сохраняем адрес актора
         self.addr = Some(ctx.address());
-        // Добавляем клиента в список
-        let addr = ctx.address();
-        let clients = self.app_state.clients.clone();
-        tokio::spawn(async move {
-            clients.lock().await.push(addr);
+        let session = Arc::new(WsSession {
+            app_state: self.app_state.clone(),
+            id: self.id,
+            addr: Some(ctx.address()),
         });
+        let app_state = self.app_state.clone();
+        ctx.spawn(actix::fut::wrap_future(async move {
+            let mut clients = app_state.clients.lock().await;
+            clients.push(session);
+        }));
     }
 
-    fn stopped(&mut self, _: &mut Self::Context) {
-        // Удаляем клиента из списка при остановке
-        if let Some(addr) = self.addr.take() {
-            let clients = self.app_state.clients.clone();
-            tokio::spawn(async move {
-                let mut clients = clients.lock().await;
-                clients.retain(|client| client != &addr);
-            });
-        }
-    }
-}
-
-impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WebSocketActor {
-    fn handle(&mut self, msg: Result<ws::Message, ws::ProtocolError>, ctx: &mut Self::Context) {
-        match msg {
-            Ok(ws::Message::Text(text)) => {
-                println!("Получено текстовое сообщение: {}", text);
-                // Парсим сообщение от клиента
-                if let Ok(request) = serde_json::from_str::<HistoricalRequest>(&text) {
-                    println!("Получен запрос на исторические данные: {:?}", request);
-                    let state = self.app_state.clone();
-                    tokio::spawn(fetch_historical_data(state, request));
-                } else if let Ok(subscription) = serde_json::from_str::<Subscription>(&text) {
-                    println!("Получена подписка: {:?}", subscription);
-                } else {
-                    println!("Не удалось десериализовать сообщение: {}", text);
-                }
-            }
-            Ok(ws::Message::Close(_)) => {
-                println!("WebSocket закрыт клиентом");
-                ctx.stop();
-            }
-            _ => (),
-        }
+    fn stopped(&mut self, ctx: &mut Self::Context) {
+        let app_state = self.app_state.clone();
+        let id = self.id;
+        ctx.spawn(actix::fut::wrap_future(async move {
+            let mut clients = app_state.clients.lock().await;
+            clients.retain(|client| client.id != id);
+        }));
     }
 }
 
-impl Handler<ClientMessage> for WebSocketActor {
+impl actix::Handler<ClientMessage> for WsSession {
     type Result = ();
 
-    fn handle(&mut self, msg: ClientMessage, ctx: &mut Self::Context) {
+    fn handle(&mut self, msg: ClientMessage, ctx: &mut Self::Context) -> Self::Result {
         ctx.text(msg.0);
     }
 }
 
-#[derive(actix::Message)]
-#[rtype(result = "()")]
-pub struct ClientMessage(pub String);
+impl actix::StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession {
+    fn handle(&mut self, msg: Result<ws::Message, ws::ProtocolError>, ctx: &mut Self::Context) {
+        match msg {
+            Ok(ws::Message::Text(text)) => {
+                let message: serde_json::Value = serde_json::from_str(&text).unwrap_or_default();
+                if message["type"] == "historical" {
+                    let request = HistoricalRequest {
+                        symbol: "BTCUSDT".to_string(),
+                        interval: "1m".to_string(),
+                        start_time: message["startTime"].as_i64().unwrap_or(0),
+                        end_time: message["endTime"].as_i64().unwrap_or(0),
+                    };
+                    let app_state = self.app_state.clone();
+                    ctx.spawn(actix::fut::wrap_future(async move {
+                        crate::binance::fetch_historical_data(app_state, request).await;
+                    }));
+                }
+            }
+            _ => {}
+        }
+    }
+}
