@@ -10,6 +10,8 @@ services:
       - /app/target
     environment:
       - RUST_LOG=info
+    networks:
+      - app-network
 
   frontend:
     build:
@@ -20,10 +22,13 @@ services:
     volumes:
       - ./frontend:/app
       - /app/node_modules
-    environment:
-      - NODE_ENV=development
     depends_on:
       - server
+    environment:
+      - NODE_ENV=development
+      - VITE_APP_SERVER_URL=http://127.0.0.1:3000
+    networks:
+      - app-network
 
   redis:
     image: redis:latest
@@ -31,3 +36,9 @@ services:
       - "6379:6379"
     volumes:
       - ./redis-data:/data
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge
