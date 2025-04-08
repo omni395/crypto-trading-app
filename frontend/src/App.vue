@@ -1,34 +1,48 @@
-<!-- src/App.vue -->
 <template>
-  <div id="app" class="flex h-screen m-0 p-0">
-    <div class="w-64 bg-gray-900 text-white p-5 flex flex-col gap-5">
-      <div>
-        <h1 class="text-2xl">Crypto Trading App</h1>
+  <div class="flex flex-row h-screen p-4 gap-4">
+    <!-- Левая часть (5/6 ширины) -->
+    <div class="flex flex-col w-5/6 h-full gap-4">
+      <!-- График (2/3 высоты) -->
+      <div class="h-2/3 bg-gray-800 rounded-lg">
+        <Chart />
       </div>
-      <div class="flex-1">
-        <h3>Разные фильтры</h3>
-      </div>
-      <div class="flex-1">
-        <h3>Список инструментов</h3>
-      </div>
+  <!-- Пустые блоки (по 1/6 высоты каждый) -->
+  <div class="flex flex-row w-5/6 h-full gap-4">
+    <div class="flex-1 bg-gray-800 rounded-lg">
+      <EmptyBlock />
     </div>
-    <div class="flex-1 flex flex-col h-full">
-      <div class="flex-1 h-1/2">
-        <h3>Основной график</h3>
-        <Chart :data="[]"/>
+    <div class="flex-1 bg-gray-800 rounded-lg">
+      <EmptyBlock />
+    </div>
+  </div>
+    </div>
+    <!-- Правая часть (1/6 ширины) -->
+    <div class="flex flex-col w-1/6 h-full gap-4">
+      <!-- Фильтры (1/6 высоты) -->
+      <div class="h-1/6 bg-gray-800 rounded-lg">
+        <Filters />
       </div>
-      <div class="flex-1 h-1/4 bg-gray-800 text-white flex items-center justify-center">Пока пусто</div>
-      <div class="flex-1 h-1/4 bg-gray-800 text-white flex items-center justify-center">Пока пусто</div>
-      <div class="flex-1 h-1/4 bg-gray-800 text-white flex items-center justify-center">Пока пусто</div>
+      <!-- Список инструментов (остальная высота) -->
+      <div class="flex-1 bg-gray-800 rounded-lg">
+        <InstrumentList />
+      </div>
     </div>
   </div>
 </template>
 
 <script>
-import Chart from './components/Chart.vue'
+import Filters from './components/Filters.vue';
+import InstrumentList from './components/InstrumentList.vue';
+import Chart from './components/Chart.vue';
+import EmptyBlock from './components/EmptyBlock.vue';
 
 export default {
   name: 'App',
-  components: { Chart }
-}
+  components: {
+    Filters,
+    InstrumentList,
+    Chart,
+    EmptyBlock,
+  },
+};
 </script>
