@@ -1,52 +1,34 @@
+<!-- src/App.vue -->
 <template>
-  <div class="flex flex-row h-screen p-4 gap-4">
-    <!-- Левая часть (5/6 ширины) -->
-    <div class="flex flex-col w-5/6 h-full gap-4">
-      <!-- График (60% высоты) -->
-      <div class="h-[60%] bg-gray-800 rounded-lg" style="min-height: 300px; min-width: 300px;">
-        <Chart />
+  <div id="app" class="flex h-screen m-0 p-0">
+    <div class="w-64 bg-gray-900 text-white p-5 flex flex-col gap-5">
+      <div>
+        <h1 class="text-2xl">Crypto Trading App</h1>
       </div>
-      <!-- Три контейнера-заглушки (40% высоты, одинаковой ширины) -->
-      <div class="flex flex-row h-[40%] gap-4">
-        <div class="flex-1 bg-gray-800 rounded-lg">
-          <EmptyBlock />
-        </div>
-        <div class="flex-1 bg-gray-800 rounded-lg">
-          <EmptyBlock />
-        </div>
-        <div class="flex-1 bg-gray-800 rounded-lg">
-          <EmptyBlock />
-        </div>
+      <div class="flex-1">
+        <h3>Разные фильтры</h3>
+      </div>
+      <div class="flex-1">
+        <h3>Список инструментов</h3>
       </div>
     </div>
-
-    <!-- Правая часть (1/6 ширины) -->
-    <div class="flex flex-col w-1/6 h-full gap-4">
-      <!-- Фильтры (1/6 высоты) -->
-      <div class="h-1/6 bg-gray-800 rounded-lg">
-        <Filters />
+    <div class="flex-1 flex flex-col h-full">
+      <div class="flex-1 h-1/2">
+        <h3>Основной график</h3>
+        <Chart :data="[]"/>
       </div>
-      <!-- Список инструментов (остальная высота) -->
-      <div class="flex-1 bg-gray-800 rounded-lg">
-        <InstrumentList />
-      </div>
+      <div class="flex-1 h-1/4 bg-gray-800 text-white flex items-center justify-center">Пока пусто</div>
+      <div class="flex-1 h-1/4 bg-gray-800 text-white flex items-center justify-center">Пока пусто</div>
+      <div class="flex-1 h-1/4 bg-gray-800 text-white flex items-center justify-center">Пока пусто</div>
     </div>
   </div>
 </template>
 
 <script>
-import Filters from './components/Filters.vue';
-import InstrumentList from './components/InstrumentList.vue';
-import Chart from './components/Chart.vue';
-import EmptyBlock from './components/EmptyBlock.vue';
+import Chart from './components/Chart.vue'
 
 export default {
   name: 'App',
-  components: {
-    Filters,
-    InstrumentList,
-    Chart,
-    EmptyBlock,
-  },
-};
+  components: { Chart }
+}
 </script>

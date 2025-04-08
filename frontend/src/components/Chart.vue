@@ -1,233 +1,70 @@
+<!-- src/components/Chart.vue -->
 <template>
-  <div id="chart-container" ref="chartContainer" class="w-full h-full"></div>
+  <div ref="chartContainer" class="w-full h-full"></div>
 </template>
 
 <script>
-import { createChart, CrosshairMode } from "lightweight-charts";
+import { createChart } from 'lightweight-charts'
 
 export default {
-  name: "Chart",
+  name: 'Chart',
+  props: {
+    data: {
+      type: Array,
+      required: true
+    }
+  },
   data() {
     return {
       chart: null,
-      candlestickSeries: null,
-      websocket: null,
-      symbol: "btcusdt",
-      interval: "1m",
-      earliestTime: null,
-      isLoading: false,
-      resizeObserver: null,
-    };
+      areaSeries: null
+    }
   },
   mounted() {
-    // Инициализируем ResizeObserver для отслеживания изменений размеров контейнера
-    this.resizeObserver = new ResizeObserver(() => {
-      this.handleResize();
-    });
-    this.resizeObserver.observe(this.$refs.chartContainer);
-
-    // Ждём, пока DOM полностью отрендерится, используя requestAnimationFrame
-    requestAnimationFrame(() => {
-      this.tryInitChart();
-    });
-  },
-  methods: {
-    tryInitChart(attempt = 0) {
-      const chartContainer = this.$refs.chartContainer;
-      const width = chartContainer.clientWidth;
-      const height = chartContainer.clientHeight;
-      console.log(`Попытка ${attempt + 1}: Размеры контейнера: ${width}x${height}`);
-
-      // Дополнительные логи для отладки
-      console.log("Стили контейнера:", window.getComputedStyle(chartContainer));
-      console.log("Родительский элемент:", chartContainer.parentElement);
-      console.log("Стили родителя:", window.getComputedStyle(chartContainer.parentElement));
-
-      if (width > 0 && height > 0) {
-        this.initChart();
-        this.setupWebSocket();
-        this.requestHistoricalData();
-      } else if (attempt < 10) {
-        // Увеличиваем количество попыток до 10 и интервал до 500 мс
-        setTimeout(() => {
-          this.tryInitChart(attempt + 1);
-        }, 500);
-      } else {
-        console.error("Не удалось инициализировать график: размеры контейнера остались 0x0");
-      }
-    },
-    initChart() {
-      const chartContainer = this.$refs.chartContainer;
-      console.log("Инициализация графика с размерами:", chartContainer.clientWidth, chartContainer.clientHeight);
-
-      this.chart = createChart(chartContainer, {
-        width: chartContainer.clientWidth,
-        height: chartContainer.clientHeight,
-        layout: {
-          background: { color: "#222" },
-          textColor: "#DDD",
-        },
-        grid: {
-          vertLines: { color: "#444" },
-          horzLines: { color: "#444" },
-        },
-        crosshair: {
-          mode: CrosshairMode.Normal,
-        },
-        timeScale: {
-          timeVisible: true,
-          secondsVisible: false,
-        },
-      });
-
-      this.candlestickSeries = this.chart.addCandlestickSeries({
-        upColor: "#26a69a",
-        downColor: "#ef5350",
-        borderVisible: false,
-        wickUpColor: "#26a69a",
-        wickDownColor: "#ef5350",
-      });
-
-      this.chart.timeScale().subscribeVisibleTimeRangeChange(() => {
-        const timeRange = this.chart.timeScale().getVisibleLogicalRange();
-        if (timeRange && timeRange.from < 0 && !this.isLoading) {
-          this.loadMoreHistoricalData();
+    this.$nextTick(() => {
+      this.initChart()
+      const resizeObserver = new ResizeObserver(() => {
+        if (this.chart) {
+          this.chart.resize(
+            this.$refs.chartContainer.clientWidth,
+            this.$refs.chartContainer.clientHeight
+          )
         }
-      });
-
-      console.log("График инициализирован:", this.chart);
-      console.log("Серия свечей инициализирована:", this.candlestickSeries);
-    },
-    handleResize() {
-      const chartContainer = this.$refs.chartContainer;
-      if (this.chart && chartContainer) {
-        const width = chartContainer.clientWidth;
-        const height = chartContainer.clientHeight;
-        console.log("Обновление размеров графика:", width, height);
-        if (width > 0 && height > 0) {
-          this.chart.resize(width, height);
-        }
-      }
-    },
-    setupWebSocket() {
-      this.websocket = new WebSocket("ws://127.0.0.1:3000/ws");
-      this.websocket.onopen = () => {
-        console.log("Подключено к локальному WebSocket");
-        this.subscribe();
-      };
-      this.websocket.onmessage = (event) => {
-        const message = JSON.parse(event.data);
-        console.log("Получено сообщение:", message);
-        this.handleWebSocketMessage(message);
-      };
-      this.websocket.onerror = (error) => {
-        console.error("WebSocket ошибка:", error);
-      };
-      this.websocket.onclose = () => {
-        console.log("WebSocket закрыт");
-      };
-    },
-    subscribe() {
-      const subscription = {
-        symbol: this.symbol,
-        interval: this.interval,
-      };
-      this.websocket.send(JSON.stringify(subscription));
-      console.log("Отправлена подписка:", subscription);
-    },
-    async requestHistoricalData() {
-      const now = Math.floor(Date.now() / 1000);
-      const startTime = now - 60 * 60 * 24; // 24 часа назад
-      console.log("Текущие значения времени:", { now, startTime });
-
-      const url = `http://127.0.0.1:3000/historical?symbol=${this.symbol}&interval=${this.interval}&start_time=${startTime * 1000}&end_time=${now * 1000}`;
-      console.log("Запрошены исторические данные через HTTP:", url);
-
-      try {
-        const response = await fetch(url);
-        const message = await response.json();
-        this.handleWebSocketMessage(message);
-      } catch (error) {
-        console.error("Ошибка при запросе исторических данных:", error);
-      }
-
-      this.earliestTime = startTime;
-    },
-    async loadMoreHistoricalData() {
-      if (this.isLoading) return;
-      this.isLoading = true;
-
-      const newEndTime = this.earliestTime * 1000;
-      const newStartTime = (this.earliestTime - 60 * 60 * 24) * 1000; // Ещё 24 часа назад
-
-      const url = `http://127.0.0.1:3000/historical?symbol=${this.symbol}&interval=${this.interval}&start_time=${newStartTime}&end_time=${newEndTime}`;
-      console.log("Запрошены дополнительные исторические данные через HTTP:", url);
-
-      try {
-        const response = await fetch(url);
-        const message = await response.json();
-        this.handleWebSocketMessage(message);
-      } catch (error) {
-        console.error("Ошибка при запросе дополнительных исторических данных:", error);
-      }
-
-      this.earliestTime = newStartTime / 1000;
-      this.isLoading = false;
-    },
-    handleWebSocketMessage(message) {
-      console.log("Обработка сообщения:", message);
-      if (message.event_type === "kline") {
-        const kline = message.kline;
-        if (kline.is_closed) {
-          const candle = {
-            time: kline.start_time / 1000,
-            open: parseFloat(kline.open),
-            high: parseFloat(kline.high),
-            low: parseFloat(kline.low),
-            close: parseFloat(kline.close),
-          };
-          console.log("Обновление свечи:", candle);
-          this.candlestickSeries.update(candle);
-        }
-      } else if (message.type === "historical") {
-        const historicalData = message.data.map((kline) => ({
-          time: kline.time,
-          open: parseFloat(kline.open),
-          high: parseFloat(kline.high),
-          low: parseFloat(kline.low),
-          close: parseFloat(kline.close),
-        }));
-        console.log("Установка исторических данных:", historicalData);
-
-        if (this.candlestickSeries && this.candlestickSeries.data().length > 0) {
-          const existingData = this.candlestickSeries.data();
-          const newData = historicalData.filter(
-            (newCandle) =>
-              !existingData.some(
-                (existingCandle) => existingCandle.time === newCandle.time
-              )
-          );
-          this.candlestickSeries.setData([...newData, ...existingData]);
-        } else if (this.candlestickSeries) {
-          this.candlestickSeries.setData(historicalData);
-        }
-
-        this.isLoading = false;
-      } else {
-        console.log("Неизвестный тип сообщения:", message);
-      }
-    },
+      })
+      resizeObserver.observe(this.$refs.chartContainer)
+    })
   },
   beforeUnmount() {
-    if (this.websocket) {
-      this.websocket.close();
-    }
     if (this.chart) {
-      this.chart.remove();
-    }
-    if (this.resizeObserver) {
-      this.resizeObserver.disconnect();
+      this.chart.remove()
     }
   },
-};
+  methods: {
+    initChart() {
+      if (!this.$refs.chartContainer) return
+
+      this.chart = createChart(this.$refs.chartContainer, {
+        autoSize: true,
+        layout: {
+          background: { color: '#1e1e1e' },
+          textColor: '#d1d4dc'
+        },
+        grid: {
+          vertLines: { color: '#2a2e39' },
+          horzLines: { color: '#2a2e39' }
+        }
+      })
+
+      this.areaSeries = this.chart.addAreaSeries({
+        topColor: 'rgba(38, 198, 218, 0.56)',
+        bottomColor: 'rgba(38, 198, 218, 0.04)',
+        lineColor: 'rgba(38, 198, 218, 1)',
+        lineWidth: 2
+      })
+
+      this.areaSeries.setData(this.data)
+      this.chart.timeScale().fitContent()
+    }
+  }
+}
 </script>

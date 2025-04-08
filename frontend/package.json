@@ -1,20 +1,21 @@
 {
-  "name": "frontend",
-  "version": "1.0.0",
+  "name": "crypto-trading-app",
+  "version": "0.1.0",
+  "private": true,
   "scripts": {
-    "serve": "vue-cli-service serve",
-    "watch": "vue-cli-service serve --watch",
-    "build": "vue-cli-service build"
+    "dev": "yarn vite",
+    "build": "yarn vite build",
+    "preview": "yarn vite preview"
   },
   "dependencies": {
-    "lightweight-charts": "^4.1.3",
-    "vue": "^3.5.13"
+    "lightweight-charts": "^4.1.6",
+    "vue": "^3.2.13"
   },
   "devDependencies": {
-    "@vue/cli-service": "^5.0.8",
-    "@vue/compiler-sfc": "^3.5.13",
-    "tailwindcss": "^3.4.14",
-    "postcss": "^8.5.3",
-    "autoprefixer": "^10.4.21"
+    "@vitejs/plugin-vue": "^5.0.5",
+    "autoprefixer": "^10.4.14",
+    "postcss": "^8.4.21",
+    "tailwindcss": "^3.4.4",
+    "vite": "^5.3.1"
   }
 }

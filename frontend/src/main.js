@@ -1,8 +1,6 @@
-// Импортируем полифилл для process
-import process from './shims/process-shim';
+// src/main.js
+import { createApp } from 'vue'
+import App from './App.vue'
+import './style.css'
 
-import { createApp } from 'vue';
-import App from './App.vue';
-import './style.css';
-
-createApp(App).mount('#app');
+createApp(App).mount('#app')

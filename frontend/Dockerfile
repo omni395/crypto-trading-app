@@ -1,7 +1,12 @@
 FROM node:20
 WORKDIR /app
-COPY package*.json ./
-RUN npm install
+# Устанавливаем Yarn
+RUN npm install -g yarn
+# Копируем package.json и yarn.lock (если есть)
+COPY package.json yarn.lock* ./
+# Устанавливаем зависимости с помощью Yarn
+RUN yarn install
 COPY . .
 EXPOSE 8080
-CMD ["npm", "run", "watch"]
+# Запускаем приложение с помощью Yarn
+CMD ["yarn", "dev", "--host"]
