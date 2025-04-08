@@ -1,7 +1,5 @@
 <template>
-  <div class="p-4 text-white">
-    <h2>Фильтры</h2>
-  </div>
+  <h2 class="mb-4 text-lg font-semibold text-gray-900">Список фильтров</h2>
 </template>
   
 <script>

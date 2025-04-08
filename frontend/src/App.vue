@@ -1,25 +1,37 @@
 <template>
-  <div class="grid grid-cols-12 grid-rows-3 gap-1 h-screen bg-gray-400">
-    <div class="col-span-12 col-start-1">
-      <Navigation />
-    </div>
-    <div class="col-span-9 col-start-1 row-start-2">
-      <Chart />
-    </div>
-    <div class="col-span-3 col-start-1 row-start-3">
-      <EmptyBlock />
-    </div>
-    <div class="col-span-3 col-start-4 row-start-3">
-      <EmptyBlock />
-    </div>
-    <div class="col-span-3 col-start-7 row-start-3">
-      <EmptyBlock />
-    </div>
-    <div class="col-span-3 row-span-2 col-start-10 row-start-2">
-      <Filters />
-      <instrumentList />
-    </div>
+  <!-- Header Section Navbar -->
+  <div class="">
+    <Navigation />
   </div>
+  <!-- Main section -->
+  <sectipn class="w-full h-screen p-5 flex flex-cols-2 gap-4">
+    <!-- Left side with chart -->
+    <div class="w-5/6 flex-grow">
+      <div class="flex-row h-1/2">
+        <Chart />
+      </div>
+      <div class="flex-row">
+        <div class="w-1/3">
+          <EmptyBlock />
+        </div>
+        <div class="w-1/3">
+          <EmptyBlock />
+        </div>
+        <div class="w-1/3">
+          <EmptyBlock />
+        </div>
+      </div>
+    </div>
+    <!-- Right side with filters and instruments-->
+    <div class="w-1/6">
+      <div class="">
+        <Filters />
+        <instrumentList />
+      </div>
+    </div>
+  </sectipn>
+  <EmptyBlock />
+  <EmptyBlock />
 </template>
 
 <script>
