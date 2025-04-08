@@ -1,32 +1,24 @@
 <template>
-  <div class="flex flex-row h-screen p-4 gap-4">
-    <!-- Левая часть (5/6 ширины) -->
-    <div class="flex flex-col w-5/6 h-full gap-4">
-      <!-- График (2/3 высоты) -->
-      <div class="h-2/3 bg-gray-800 rounded-lg">
+  <div class="grid grid-cols-12 grid-rows-3 gap-1">
+      <div class="col-span-12 col-start-1">
+        <Navigation />
+      </div>
+      <div class="col-span-9 row-span-2 col-start-1 row-start-2">
         <Chart />
       </div>
-  <!-- Пустые блоки (по 1/6 высоты каждый) -->
-  <div class="flex flex-row w-5/6 h-full gap-4">
-    <div class="flex-1 bg-gray-800 rounded-lg">
-      <EmptyBlock />
-    </div>
-    <div class="flex-1 bg-gray-800 rounded-lg">
-      <EmptyBlock />
-    </div>
-  </div>
-    </div>
-    <!-- Правая часть (1/6 ширины) -->
-    <div class="flex flex-col w-1/6 h-full gap-4">
-      <!-- Фильтры (1/6 высоты) -->
-      <div class="h-1/6 bg-gray-800 rounded-lg">
+      <div class="col-span-3 col-start-1 row-start-3">
         <Filters />
+        <instrumentList />
       </div>
-      <!-- Список инструментов (остальная высота) -->
-      <div class="flex-1 bg-gray-800 rounded-lg">
-        <InstrumentList />
+      <div class="col-span-3 col-start-4 row-start-3">
+        <EmptyBlock />
       </div>
-    </div>
+      <div class="col-span-3 col-start-7 row-start-3">
+        <EmptyBlock />
+      </div>
+      <div class="col-span-3 row-span-2 col-start-10 row-start-2">
+        <EmptyBlock />
+      </div>
   </div>
 </template>
 
@@ -42,7 +34,8 @@ export default {
     Filters,
     InstrumentList,
     Chart,
-    EmptyBlock,
+    Navigation,
+    EmptyBlock
   },
 };
 </script>
