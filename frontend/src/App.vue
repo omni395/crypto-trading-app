@@ -4,7 +4,7 @@
     <Navigation />
   </div>
   <!-- Main section -->
-  <sectipn class="w-full h-screen p-5 flex flex-cols-2 gap-4">
+  <section class="w-full h-screen p-5 flex flex-cols-2 gap-4">
     <!-- Left side with chart -->
     <div class="w-5/6 flex-grow">
       <div class="flex-row h-1/2">
@@ -29,7 +29,7 @@
         <instrumentList />
       </div>
     </div>
-  </sectipn>
+  </section>
   <EmptyBlock />
   <EmptyBlock />
 </template>

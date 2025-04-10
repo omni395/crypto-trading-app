@@ -1,8 +1,11 @@
+use actix::{ActorContext, AsyncContext};
 use actix_web::{web, HttpRequest, HttpResponse};
 use actix_web_actors::ws;
-use actix::AsyncContext;
-use crate::app_state::AppState;
+use serde_json::json;
 use std::sync::Arc;
+
+use crate::app_state::AppState;
+use crate::models::DrawingLine;
 
 pub async fn ws_index(
     req: HttpRequest,
@@ -79,7 +82,44 @@ impl actix::Handler<ClientMessage> for WsSession {
 }
 
 impl actix::StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession {
-    fn handle(&mut self, _msg: Result<ws::Message, ws::ProtocolError>, _ctx: &mut Self::Context) {
-        // Больше не обрабатываем исторические данные через WebSocket
+    fn handle(&mut self, msg: Result<ws::Message, ws::ProtocolError>, ctx: &mut Self::Context) {
+        match msg {
+            Ok(ws::Message::Text(text)) => {
+                if let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) {
+                    let event_type = value["event_type"].as_str().unwrap_or("");
+                    match event_type {
+                        "save_drawing" => {
+                            if let Ok(drawing) = serde_json::from_value::<DrawingLine>(value["data"].clone()) {
+                                let db = self.app_state.db.clone();
+                                let addr = ctx.address();
+                                ctx.spawn(actix::fut::wrap_future(async move {
+                                    match db.save_drawing(&drawing).await {
+                                        Ok(_) => addr.do_send(ClientMessage(json!({"event_type": "drawing_saved", "status": "success"}).to_string())),
+                                        Err(e) => addr.do_send(ClientMessage(json!({"event_type": "drawing_saved", "status": "error", "message": e.to_string()}).to_string())),
+                                    }
+                                }));
+                            }
+                        }
+                        "load_drawings" => {
+                            if let Some(symbol) = value["data"]["symbol"].as_str() {
+                                let db = self.app_state.db.clone();
+                                let addr = ctx.address();
+                                let symbol = symbol.to_string();
+                                ctx.spawn(actix::fut::wrap_future(async move {
+                                    match db.load_drawings(&symbol).await {
+                                        Ok(lines) => addr.do_send(ClientMessage(json!({"event_type": "drawings_loaded", "data": lines}).to_string())),
+                                        Err(e) => addr.do_send(ClientMessage(json!({"event_type": "drawings_loaded", "status": "error", "message": e.to_string()}).to_string())),
+                                    }
+                                }));
+                            }
+                        }
+                        _ => println!("Неизвестный тип события: {}", event_type),
+                    }
+                }
+            }
+            Ok(ws::Message::Ping(msg)) => ctx.pong(&msg),
+            Ok(ws::Message::Close(_)) => ctx.stop(),
+            _ => (),
+        }
     }
 }

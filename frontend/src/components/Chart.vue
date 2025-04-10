@@ -1,9 +1,13 @@
 <template>
-  <div id="chart-container" ref="chartContainer" class="w-full h-full"></div>
+  <div>
+    <button @click="enableDrawing('line')">Рисовать линию</button>
+    <button @click="enableDrawing(null)">Отключить рисование</button>
+    <div id="chart-container" ref="chartContainer" class="w-full h-full"></div>
+  </div>
 </template>
 
 <script>
-import { createChart, CrosshairMode } from "lightweight-charts";
+import { createChart, CrosshairMode, LineStyle } from "lightweight-charts";
 
 export default {
   name: "Chart",
@@ -11,26 +15,34 @@ export default {
     return {
       chart: null,
       candlestickSeries: null,
+      volumeSeries: null,
+      priceLine: null,
       websocket: null,
-      symbol: "btcusdt",
+      symbol: "BTCUSDT",
       interval: "1m",
       earliestTime: null,
       isLoading: false,
+      drawingTool: null,
+      drawnLines: [],
     };
   },
-  mounted() {
+  async mounted() {
     this.initChart();
-    this.setupWebSocket();
+    await this.setupWebSocket(); // Дожидаемся подключения WebSocket
     this.requestHistoricalData();
+    this.loadDrawingLines(); // Теперь безопасно вызывать после открытия WebSocket
   },
   methods: {
     initChart() {
       const chartContainer = this.$refs.chartContainer;
-      console.log("Размеры контейнера:", chartContainer.clientWidth, chartContainer.clientHeight);
+      if (!chartContainer) {
+        console.error("Chart container not found");
+        return;
+      }
 
       this.chart = createChart(chartContainer, {
         width: chartContainer.clientWidth,
-        height: chartContainer.clientHeight,
+        height: chartContainer.clientHeight || 400, // Устанавливаем высоту по умолчанию, если не определена
         layout: {
           background: { color: "#222" },
           textColor: "#DDD",
@@ -46,6 +58,9 @@ export default {
           timeVisible: true,
           secondsVisible: false,
         },
+        rightPriceScale: {
+          borderColor: "#444",
+        },
       });
 
       this.candlestickSeries = this.chart.addCandlestickSeries({
@@ -56,6 +71,18 @@ export default {
         wickDownColor: "#ef5350",
       });
 
+      this.volumeSeries = this.chart.addHistogramSeries({
+        color: "#26a69a",
+        priceFormat: {
+          type: "volume",
+        },
+        priceScaleId: "",
+        scaleMargins: {
+          top: 0.8,
+          bottom: 0,
+        },
+      });
+
       this.chart.timeScale().subscribeVisibleTimeRangeChange(() => {
         const timeRange = this.chart.timeScale().getVisibleLogicalRange();
         if (timeRange && timeRange.from < 0 && !this.isLoading) {
@@ -63,31 +90,62 @@ export default {
         }
       });
 
-      console.log("График инициализирован:", this.chart);
-      console.log("Серия свечей инициализирована:", this.candlestickSeries);
+      this.chart.subscribeClick((param) => {
+        if (this.drawingTool === "line" && param.point) {
+          const price = this.candlestickSeries.coordinateToPrice(param.point.y);
+          const time = this.chart.timeScale().coordinateToLogical(param.point.x);
+          const line = this.candlestickSeries.createPriceLine({
+            price: price,
+            color: "#FFD700",
+            lineWidth: 1,
+            lineStyle: LineStyle.Dashed,
+          });
+          this.drawnLines.push({ price, time, line });
+          this.saveDrawingLine(price, time);
+        }
+      });
     },
-    setupWebSocket() {
-      this.websocket = new WebSocket("ws://127.0.0.1:3000/ws");
-      this.websocket.onopen = () => {
-        console.log("Подключено к локальному WebSocket");
-        this.subscribe();
-      };
-      this.websocket.onmessage = (event) => {
-        const message = JSON.parse(event.data);
-        console.log("Получено сообщение:", message);
-        this.handleWebSocketMessage(message);
-      };
-      this.websocket.onerror = (error) => {
-        console.error("WebSocket ошибка:", error);
-      };
-      this.websocket.onclose = () => {
-        console.log("WebSocket закрыт");
-      };
+    async setupWebSocket() {
+      return new Promise((resolve) => {
+        this.websocket = new WebSocket("ws://127.0.0.1:3000/ws");
+        this.websocket.onopen = () => {
+          console.log("Подключено к WebSocket");
+          this.subscribe();
+          resolve();
+        };
+        this.websocket.onmessage = (event) => {
+          const message = JSON.parse(event.data);
+          console.log("Получено сообщение от WebSocket:", message);
+          if (message.event_type === "kline") {
+            this.handleWebSocketMessage(message);
+          } else if (message.event_type === "drawing_saved") {
+            console.log("Линия сохранена:", message.status);
+          } else if (message.event_type === "drawings_loaded") {
+            message.data.forEach(({ price }) => {
+              const line = this.candlestickSeries.createPriceLine({
+                price,
+                color: "#FFD700",
+                lineWidth: 1,
+                lineStyle: LineStyle.Dashed,
+              });
+              this.drawnLines.push({ price, line });
+            });
+            console.log("Линии загружены:", message.data);
+          }
+        };
+        this.websocket.onerror = (error) => {
+          console.error("WebSocket ошибка:", error);
+        };
+        this.websocket.onclose = () => {
+          console.log("WebSocket закрыт");
+        };
+      });
     },
     subscribe() {
       const subscription = {
         symbol: this.symbol,
         interval: this.interval,
+        streams: ["kline"],
       };
       this.websocket.send(JSON.stringify(subscription));
       console.log("Отправлена подписка:", subscription);
@@ -95,15 +153,18 @@ export default {
     async requestHistoricalData() {
       const now = Math.floor(Date.now() / 1000);
       const startTime = now - 60 * 60 * 24; // 24 часа назад
-      console.log("Текущие значения времени:", { now, startTime });
 
       const url = `http://127.0.0.1:3000/historical?symbol=${this.symbol}&interval=${this.interval}&start_time=${startTime * 1000}&end_time=${now * 1000}`;
-      console.log("Запрошены исторические данные через HTTP:", url);
+      console.log("Запрошены исторические данные:", url);
 
       try {
         const response = await fetch(url);
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
         const message = await response.json();
-        this.handleWebSocketMessage(message);
+        console.log("Получены исторические данные:", message);
+        this.handleHistoricalData(message);
       } catch (error) {
         console.error("Ошибка при запросе исторических данных:", error);
       }
@@ -115,62 +176,120 @@ export default {
       this.isLoading = true;
 
       const newEndTime = this.earliestTime * 1000;
-      const newStartTime = (this.earliestTime - 60 * 1000) * 1000;
+      const newStartTime = (this.earliestTime - 60 * 60) * 1000;
 
       const url = `http://127.0.0.1:3000/historical?symbol=${this.symbol}&interval=${this.interval}&start_time=${newStartTime}&end_time=${newEndTime}`;
-      console.log("Запрошены дополнительные исторические данные через HTTP:", url);
+      console.log("Запрошены дополнительные исторические данные:", url);
 
       try {
         const response = await fetch(url);
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
         const message = await response.json();
-        this.handleWebSocketMessage(message);
+        console.log("Получены дополнительные исторические данные:", message);
+        this.handleHistoricalData(message);
       } catch (error) {
-        console.error("Ошибка при запросе дополнительных исторических данных:", error);
+        console.error("Ошибка при загрузке данных:", error);
       }
 
       this.earliestTime = newStartTime / 1000;
+      this.isLoading = false;
     },
     handleWebSocketMessage(message) {
-      console.log("Обработка сообщения:", message);
-      if (message.event_type === "kline") {
-        const kline = message.kline;
-        if (kline.is_closed) {
-          const candle = {
-            time: kline.start_time / 1000,
-            open: parseFloat(kline.open),
-            high: parseFloat(kline.high),
-            low: parseFloat(kline.low),
-            close: parseFloat(kline.close),
-          };
-          console.log("Обновление свечи:", candle);
-          this.candlestickSeries.update(candle);
-        }
-      } else if (message.type === "historical") {
-        const historicalData = message.data.map((kline) => ({
+      const kline = message.kline;
+      const candle = {
+        time: kline.start_time / 1000,
+        open: parseFloat(kline.open),
+        high: parseFloat(kline.high),
+        low: parseFloat(kline.low),
+        close: parseFloat(kline.close),
+      };
+      const volume = {
+        time: kline.start_time / 1000,
+        value: parseFloat(kline.volume || 0),
+        color: parseFloat(kline.close) >= parseFloat(kline.open) ? "#26a69a" : "#ef5350",
+      };
+
+      console.log("Обновление свечи:", candle);
+      console.log("Обновление объема:", volume);
+
+      this.candlestickSeries.update(candle);
+      this.volumeSeries.update(volume);
+
+      if (this.priceLine) {
+        this.candlestickSeries.removePriceLine(this.priceLine);
+      }
+      this.priceLine = this.candlestickSeries.createPriceLine({
+        price: candle.close,
+        color: "#FFD700",
+        lineWidth: 1,
+        lineStyle: LineStyle.Solid,
+        axisLabelVisible: true,
+        title: "Текущая цена",
+      });
+    },
+    handleHistoricalData(message) {
+      if (message.type === "historical") {
+        const candlestickData = message.data.map((kline) => ({
           time: kline.time,
           open: parseFloat(kline.open),
           high: parseFloat(kline.high),
           low: parseFloat(kline.low),
           close: parseFloat(kline.close),
         }));
-        console.log("Установка исторических данных:", historicalData);
+
+        const volumeData = message.data.map((kline) => ({
+          time: kline.time,
+          value: parseFloat(kline.volume || 0),
+          color: parseFloat(kline.close) >= parseFloat(kline.open) ? "#26a69a" : "#ef5350",
+        }));
+
+        console.log("Исторические свечи:", candlestickData);
+        console.log("Исторические объемы:", volumeData);
 
         if (this.candlestickSeries.data().length > 0) {
           const existingData = this.candlestickSeries.data();
-          const newData = historicalData.filter(
+          const newData = candlestickData.filter(
             (newCandle) =>
               !existingData.some(
                 (existingCandle) => existingCandle.time === newCandle.time
               )
           );
           this.candlestickSeries.setData([...newData, ...existingData]);
+          this.volumeSeries.setData([...volumeData, ...this.volumeSeries.data()]);
         } else {
-          this.candlestickSeries.setData(historicalData);
+          this.candlestickSeries.setData(candlestickData);
+          this.volumeSeries.setData(volumeData);
         }
-
-        this.isLoading = false;
       } else {
-        console.log("Неизвестный тип сообщения:", message);
+        console.error("Неверный формат исторических данных:", message);
+      }
+    },
+    enableDrawing(tool) {
+      this.drawingTool = tool;
+      console.log("Инструмент рисования:", tool);
+    },
+    saveDrawingLine(price, time) {
+      const message = {
+        event_type: "save_drawing",
+        data: { symbol: this.symbol, price, time },
+      };
+      if (this.websocket.readyState === WebSocket.OPEN) {
+        this.websocket.send(JSON.stringify(message));
+      } else {
+        console.error("WebSocket не готов для отправки save_drawing");
+      }
+    },
+    loadDrawingLines() {
+      const message = {
+        event_type: "load_drawings",
+        data: { symbol: this.symbol },
+      };
+      if (this.websocket.readyState === WebSocket.OPEN) {
+        this.websocket.send(JSON.stringify(message));
+      } else {
+        console.error("WebSocket не готов для отправки load_drawings");
       }
     },
   },
@@ -184,3 +303,10 @@ export default {
   },
 };
 </script>
+
+<style scoped>
+#chart-container {
+  width: 100%;
+  height: 600px; /* Устанавливаем фиксированную высоту */
+}
+</style>

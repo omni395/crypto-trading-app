@@ -3,13 +3,10 @@ use futures_util::StreamExt;
 use actix_web::{web, HttpResponse};
 use reqwest;
 use serde::Deserialize;
-use crate::app_state::AppState;
-#[allow(unused_imports)] // Подавляем предупреждение
-use crate::websocket::ClientMessage;
-use crate::models::{KlineEvent, DepthEvent};
-use redis::Commands;
 
-// Остальной код остаётся без изменений
+use crate::app_state::AppState;
+use crate::models::{KlineEvent, DepthEvent};
+
 #[derive(Deserialize, Debug)]
 pub struct HistoricalRequest {
     pub symbol: String,
@@ -34,7 +31,7 @@ pub async fn get_historical_data(
         end_time: query.end_time,
     };
 
-    match fetch_historical_data(state, request).await {
+    match fetch_historical_data(&state, request).await {
         Ok(historical_data) => HttpResponse::Ok().json(json!({
             "type": "historical",
             "data": historical_data
@@ -44,54 +41,46 @@ pub async fn get_historical_data(
 }
 
 pub async fn fetch_historical_data(
-    state: web::Data<AppState>,
+    state: &web::Data<AppState>,
     request: HistoricalRequest,
 ) -> Result<Vec<serde_json::Value>, Box<dyn std::error::Error>> {
-    let mut conn = state.redis_client
-        .get_connection()
-        .expect("Failed to connect to Redis");
-
     let key = format!("historical:{}:{}", request.start_time, request.end_time);
-    let cached_data: Option<String> = conn.get(&key).ok();
-
-    let historical_data = if let Some(data) = cached_data {
+    if let Ok(Some(cached_data)) = state.db.get_cached_historical_data(&key).await {
         println!("Данные взяты из кэша Redis");
-        serde_json::from_str(&data).unwrap_or_default()
-    } else {
-        let client = reqwest::Client::new();
-        let symbol = request.symbol.to_uppercase();
-        let url = format!(
-            "https://api.binance.com/api/v3/klines?symbol={}&interval={}&startTime={}&endTime={}&limit=1000",
-            symbol, request.interval, request.start_time, request.end_time
-        );
-        println!("Отправлен запрос на исторические данные: {}", url);
+        return Ok(cached_data);
+    }
 
-        let response = client.get(&url).send().await?;
-        let data: Vec<Vec<serde_json::Value>> = response.json().await?;
-        let historical_data: Vec<serde_json::Value> = data.into_iter().map(|kline| {
-            let time = kline[0].as_i64().unwrap() / 1000; // Убедимся, что время в секундах
-            let open = kline[1].as_str().unwrap().parse::<f64>().unwrap_or(0.0);
-            let high = kline[2].as_str().unwrap().parse::<f64>().unwrap_or(0.0);
-            let low = kline[3].as_str().unwrap().parse::<f64>().unwrap_or(0.0);
-            let close = kline[4].as_str().unwrap().parse::<f64>().unwrap_or(0.0);
-            let volume = kline[5].as_str().unwrap().parse::<f64>().unwrap_or(0.0);
+    let client = reqwest::Client::new();
+    let symbol = request.symbol.to_uppercase();
+    let url = format!(
+        "https://api.binance.com/api/v3/klines?symbol={}&interval={}&startTime={}&endTime={}&limit=1000",
+        symbol, request.interval, request.start_time, request.end_time
+    );
+    println!("Отправлен запрос на исторические данные: {}", url);
 
-            json!({
-                "event_type": "historical_kline",
-                "time": time,
-                "open": open,
-                "high": high,
-                "low": low,
-                "close": close,
-                "volume": volume,
-            })
-        }).collect();
+    let response = client.get(&url).send().await?;
+    let data: Vec<Vec<serde_json::Value>> = response.json().await?;
+    let historical_data: Vec<serde_json::Value> = data.into_iter().map(|kline| {
+        let time = kline[0].as_i64().unwrap() / 1000;
+        let open = kline[1].as_str().unwrap().parse::<f64>().unwrap_or(0.0);
+        let high = kline[2].as_str().unwrap().parse::<f64>().unwrap_or(0.0);
+        let low = kline[3].as_str().unwrap().parse::<f64>().unwrap_or(0.0);
+        let close = kline[4].as_str().unwrap().parse::<f64>().unwrap_or(0.0);
+        let volume = kline[5].as_str().unwrap().parse::<f64>().unwrap_or(0.0);
 
-        let serialized_data = serde_json::to_string(&historical_data).unwrap();
-        conn.set_ex::<_, _, ()>(&key, serialized_data, 3600).ok();
+        json!({
+            "event_type": "historical_kline",
+            "time": time,
+            "open": open,
+            "high": high,
+            "low": low,
+            "close": close,
+            "volume": volume,
+        })
+    }).collect();
 
-        historical_data
-    };
+    state.db.cache_historical_data(&key, &historical_data).await
+        .unwrap_or_else(|e| println!("Failed to cache historical data: {:?}", e));
 
     Ok(historical_data)
 }
@@ -106,21 +95,37 @@ pub async fn start_binance_ws(state: web::Data<AppState>) {
                     match msg {
                         Ok(tokio_tungstenite::tungstenite::Message::Text(text)) => {
                             if let Ok(data) = serde_json::from_str::<KlineEvent>(&text) {
+                                let kline = crate::models::Kline {
+                                    start_time: data.k.start_time,
+                                    close_time: data.k.close_time,
+                                    symbol: data.k.symbol.clone(),
+                                    interval: data.k.interval.clone(),
+                                    open: data.k.open,
+                                    high: data.k.high,
+                                    low: data.k.low,
+                                    close: data.k.close,
+                                    volume: data.k.volume,
+                                    is_closed: data.k.is_closed,
+                                };
+
+                                state.db.store_kline(&data.symbol, &data.k.interval, &kline).await
+                                    .unwrap_or_else(|e| println!("Failed to store kline: {:?}", e));
+
                                 let kline_json = json!({
                                     "event_type": "kline",
                                     "event_time": data.event_time,
                                     "symbol": data.symbol,
                                     "kline": {
-                                        "start_time": data.k.start_time,
-                                        "close_time": data.k.close_time,
-                                        "symbol": data.k.symbol,
-                                        "interval": data.k.interval,
-                                        "open": data.k.open,
-                                        "high": data.k.high,
-                                        "low": data.k.low,
-                                        "close": data.k.close,
-                                        "volume": data.k.volume,
-                                        "is_closed": data.k.is_closed,
+                                        "start_time": kline.start_time,
+                                        "close_time": kline.close_time,
+                                        "symbol": kline.symbol,
+                                        "interval": kline.interval,
+                                        "open": kline.open,
+                                        "high": kline.high,
+                                        "low": kline.low,
+                                        "close": kline.close,
+                                        "volume": kline.volume,
+                                        "is_closed": kline.is_closed,
                                     }
                                 });
 
