@@ -7,7 +7,7 @@
   <section class="w-full h-screen p-5 flex flex-cols-2 gap-4">
     <!-- Left side with chart -->
     <div class="w-5/6 flex-grow">
-      <div class="flex-row h-1/2">
+      <div class="flex-row">
         <Chart />
       </div>
       <div class="flex-row">

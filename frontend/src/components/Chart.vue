@@ -1,8 +1,17 @@
 <template>
   <div>
+    <div class="controls">
+      <div v-for="obj in chartObjects" :key="obj.id" class="control-item">
+        <label>
+          <input type="checkbox" v-model="obj.visible" @change="toggleVisibility(obj)" />
+          {{ obj.id }}
+        </label>
+        <button @click="removeObject(obj.id)">Удалить</button>
+      </div>
+    </div>
     <button @click="enableDrawing('line')">Рисовать линию</button>
     <button @click="enableDrawing(null)">Отключить рисование</button>
-    <div id="chart-container" ref="chartContainer" class="w-full h-full"></div>
+    <div id="chart-container" ref="chartContainer" class="chart-container"></div>
   </div>
 </template>
 
@@ -14,8 +23,7 @@ export default {
   data() {
     return {
       chart: null,
-      candlestickSeries: null,
-      volumeSeries: null,
+      chartObjects: [], // Дерево объектов
       priceLine: null,
       websocket: null,
       symbol: "BTCUSDT",
@@ -24,8 +32,8 @@ export default {
       isLoading: false,
       drawingTool: null,
       drawnLines: [],
-      previousPrice: null, // Для отслеживания направления цены
-      lastCandle: null, // Для хранения последней свечи
+      previousPrice: null,
+      lastCandle: null,
     };
   },
   async mounted() {
@@ -62,21 +70,11 @@ export default {
         },
         rightPriceScale: {
           borderColor: "#444",
-          autoScale: true, // Автоматическое масштабирование для свечей
+          autoScale: true,
         },
       });
 
-      // Добавляем шкалу цен для свечей
-      this.candlestickSeries = this.chart.addCandlestickSeries({
-        upColor: "#26a69a",
-        downColor: "#ef5350",
-        borderVisible: false,
-        wickUpColor: "#26a69a",
-        wickDownColor: "#ef5350",
-        priceScaleId: "right", // Шкала цен для свечей
-      });
-
-      // Определяем шкалу цен для объёмов
+      // Определяем шкалы цен
       this.chart.applyOptions({
         priceScale: [
           {
@@ -88,32 +86,64 @@ export default {
             id: "volume", // Шкала для объёмов
             visible: true,
             scaleMargins: {
-              top: 0.8, // Начинается на 80% высоты графика (снизу)
-              bottom: 0, // Доходит до низа графика
+              top: 0.8,
+              bottom: 0,
             },
-            autoScale: true, // Включаем автоматическое масштабирование
+            autoScale: true,
+            priceFormatter: (value) => {
+              if (value >= 1000000) return `${(value / 1000000).toFixed(1)}M`;
+              if (value >= 1000) return `${(value / 1000).toFixed(1)}K`;
+              return value.toFixed(2);
+            },
           },
         ],
       });
 
-      // Добавляем гистограмму объёмов
-      this.volumeSeries = this.chart.addHistogramSeries({
+      // Добавляем свечи
+      const candlestickSeries = this.chart.addCandlestickSeries({
+        upColor: "#26a69a",
+        downColor: "#ef5350",
+        borderVisible: false,
+        wickUpColor: "#26a69a",
+        wickDownColor: "#ef5350",
+        priceScaleId: "right",
+      });
+
+      // Добавляем объёмы
+      const volumeSeries = this.chart.addHistogramSeries({
         color: "#26a69a",
         priceFormat: {
           type: "volume",
           formatter: (value) => {
-            // Форматируем значения объёмов
             if (value >= 1000000) return `${(value / 1000000).toFixed(1)}M`;
             if (value >= 1000) return `${(value / 1000).toFixed(1)}K`;
-            return value.toFixed(0); // Для значений меньше 1000 показываем как есть
+            return value.toFixed(2);
           },
         },
-        priceScaleId: "volume", // Привязываем к шкале "volume"
+        priceScaleId: "volume",
         scaleMargins: {
-          top: 0.8, // Объёмы занимают нижние 20% графика
+          top: 0.8,
           bottom: 0,
         },
       });
+
+      // Инициализируем дерево объектов
+      this.chartObjects = [
+        {
+          id: "candlestick",
+          type: "candlestick",
+          series: candlestickSeries,
+          visible: true,
+          settings: { upColor: "#26a69a", downColor: "#ef5350" },
+        },
+        {
+          id: "volume",
+          type: "volume",
+          series: volumeSeries,
+          visible: true,
+          settings: { scaleMargins: { top: 0.8, bottom: 0 } },
+        },
+      ];
 
       this.chart.timeScale().subscribeVisibleTimeRangeChange(() => {
         const timeRange = this.chart.timeScale().getVisibleLogicalRange();
@@ -122,25 +152,79 @@ export default {
         }
       });
 
-      this.chart.subscribeClick((param) => {
-        if (this.drawingTool === "line" && param.point) {
-          const price = this.candlestickSeries.coordinateToPrice(param.point.y);
-          const time = this.chart.timeScale().coordinateToLogical(param.point.x);
-          const line = this.candlestickSeries.createPriceLine({
-            price: price,
-            color: "#FFD700",
-            lineWidth: 1,
-            lineStyle: LineStyle.Dashed,
-          });
-          this.drawnLines.push({ price, time, line });
-          this.saveDrawingLine(price, time);
-        }
-      });
-
       chartContainer.addEventListener("contextmenu", (e) => {
         e.preventDefault();
         this.enableDrawing(null);
       });
+
+      this.chart.subscribeClick((param) => {
+        if (this.drawingTool === "line" && param.point) {
+          const candlestickObj = this.chartObjects.find((obj) => obj.id === "candlestick");
+          if (candlestickObj && candlestickObj.visible) {
+            const price = candlestickObj.series.coordinateToPrice(param.point.y);
+            const time = this.chart.timeScale().coordinateToLogical(param.point.x);
+            const line = candlestickObj.series.createPriceLine({
+              price: price,
+              color: "#FFD700",
+              lineWidth: 1,
+              lineStyle: LineStyle.Dashed,
+            });
+            this.drawnLines.push({ price, time, line });
+            this.saveDrawingLine(price, time);
+          }
+        }
+      });
+    },
+    toggleVisibility(obj) {
+      obj.series.applyOptions({ visible: obj.visible });
+      if (obj.type === "volume") {
+        this.chart.applyOptions({
+          priceScale: [
+            {
+              id: "right",
+              visible: true,
+              autoScale: true,
+            },
+            {
+              id: "volume",
+              visible: obj.visible, // Управляем видимостью шкалы объёмов
+              scaleMargins: {
+                top: 0.8,
+                bottom: 0,
+              },
+              autoScale: true,
+              priceFormatter: (value) => {
+                if (value >= 1000000) return `${(value / 1000000).toFixed(1)}M`;
+                if (value >= 1000) return `${(value / 1000).toFixed(1)}K`;
+                return value.toFixed(2);
+              },
+            },
+          ],
+        });
+      }
+    },
+    removeObject(id) {
+      const index = this.chartObjects.findIndex((obj) => obj.id === id);
+      if (index !== -1) {
+        const obj = this.chartObjects[index];
+        this.chart.removeSeries(obj.series); // Удаляем серию из графика
+        this.chartObjects.splice(index, 1); // Удаляем объект из дерева
+        if (obj.type === "volume") {
+          this.chart.applyOptions({
+            priceScale: [
+              {
+                id: "right",
+                visible: true,
+                autoScale: true,
+              },
+              {
+                id: "volume",
+                visible: false, // Скрываем шкалу объёмов
+              },
+            ],
+          });
+        }
+      }
     },
     async setupWebSocket() {
       return new Promise((resolve) => {
@@ -159,13 +243,16 @@ export default {
             console.log("Линия сохранена:", message.status);
           } else if (message.event_type === "drawings_loaded") {
             message.data.forEach(({ price }) => {
-              const line = this.candlestickSeries.createPriceLine({
-                price,
-                color: "#FFD700",
-                lineWidth: 1,
-                lineStyle: LineStyle.Dashed,
-              });
-              this.drawnLines.push({ price, line });
+              const candlestickObj = this.chartObjects.find((obj) => obj.id === "candlestick");
+              if (candlestickObj && candlestickObj.visible) {
+                const line = candlestickObj.series.createPriceLine({
+                  price,
+                  color: "#FFD700",
+                  lineWidth: 1,
+                  lineStyle: LineStyle.Dashed,
+                });
+                this.drawnLines.push({ price, line });
+              }
             });
             console.log("Линии загружены:", message.data);
           }
@@ -189,7 +276,7 @@ export default {
     },
     async requestHistoricalData() {
       const now = Math.floor(Date.now() / 1000);
-      const startOfYesterday = Math.floor(new Date().setHours(0, 0, 0, 0) / 1000) - 24 * 60 * 60; // Начало вчерашнего дня (10.04 00:00)
+      const startOfYesterday = Math.floor(new Date().setHours(0, 0, 0, 0) / 1000) - 24 * 60 * 60;
 
       const url = `http://127.0.0.1:3000/historical?symbol=${this.symbol}&interval=${this.interval}&start_time=${startOfYesterday * 1000}&end_time=${now * 1000}`;
       console.log("Запрошены начальные исторические данные с начала вчера:", url);
@@ -204,7 +291,6 @@ export default {
         this.handleHistoricalData(message);
         this.earliestTime = startOfYesterday;
 
-        // После загрузки исторических данных добавляем линию текущей цены
         if (message.data.length > 0) {
           const lastCandle = message.data[message.data.length - 1];
           this.lastCandle = {
@@ -221,40 +307,40 @@ export default {
       if (this.isLoading) return;
       this.isLoading = true;
 
-      const existingData = this.candlestickSeries.data();
-      if (existingData.length === 0) {
-        this.isLoading = false;
-        return;
-      }
+      const candlestickObj = this.chartObjects.find((obj) => obj.id === "candlestick");
+      if (!candlestickObj) return;
 
-      const earliestCandleTime = Math.min(...existingData.map((c) => c.time));
-      const newEndTime = earliestCandleTime * 1000;
-      const newStartTime = newEndTime - 60 * 60 * 8 * 1000; // 8 часов назад
+      const existingData = candlestickObj.series.data();
+      if (existingData.length > 0) {
+        const earliestCandleTime = Math.min(...existingData.map((c) => c.time));
+        const newEndTime = earliestCandleTime * 1000;
+        const newStartTime = newEndTime - 60 * 60 * 8 * 1000;
 
-      if (newStartTime < 0) {
-        console.warn("Достигнуто начало доступных данных");
-        this.isLoading = false;
-        return;
-      }
-
-      const url = `http://127.0.0.1:3000/historical?symbol=${this.symbol}&interval=${this.interval}&start_time=${newStartTime}&end_time=${newEndTime}`;
-      console.log(
-        "Запрошены дополнительные исторические данные:",
-        url,
-        `от ${new Date(newStartTime).toISOString()} до ${new Date(newEndTime).toISOString()}`
-      );
-
-      try {
-        const response = await fetch(url);
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
+        if (newStartTime < 0) {
+          console.warn("Достигнуто начало доступных данных");
+          this.isLoading = false;
+          return;
         }
-        const message = await response.json();
-        console.log("Получены дополнительные исторические данные:", message.data.length, "свечей");
-        this.handleHistoricalData(message);
-        this.earliestTime = newStartTime / 1000;
-      } catch (error) {
-        console.error("Ошибка при загрузке данных:", error);
+
+        const url = `http://127.0.0.1:3000/historical?symbol=${this.symbol}&interval=${this.interval}&start_time=${newStartTime}&end_time=${newEndTime}`;
+        console.log(
+          "Запрошены дополнительные исторические данные:",
+          url,
+          `от ${new Date(newStartTime).toISOString()} до ${new Date(newEndTime).toISOString()}`
+        );
+
+        try {
+          const response = await fetch(url);
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+          }
+          const message = await response.json();
+          console.log("Получены дополнительные исторические данные:", message.data.length, "свечей");
+          this.handleHistoricalData(message);
+          this.earliestTime = newStartTime / 1000;
+        } catch (error) {
+          console.error("Ошибка при загрузке данных:", error);
+        }
       }
 
       this.isLoading = false;
@@ -274,49 +360,55 @@ export default {
         color: parseFloat(kline.close) >= parseFloat(kline.open) ? "#26a69a" : "#ef5350",
       };
 
-      // Сохраняем последнюю свечу для определения направления
       this.lastCandle = {
         open: parseFloat(kline.open),
         close: parseFloat(kline.close),
       };
 
-      this.candlestickSeries.update(candle);
-      this.volumeSeries.update(volume);
+      const candlestickObj = this.chartObjects.find((obj) => obj.id === "candlestick");
+      const volumeObj = this.chartObjects.find((obj) => obj.id === "volume");
 
-      // Обновляем текущую цену
+      if (candlestickObj && candlestickObj.visible) {
+        candlestickObj.series.update(candle);
+      }
+      if (volumeObj && volumeObj.visible) {
+        volumeObj.series.update(volume);
+      }
+
       this.updateCurrentPrice(candle.close);
     },
     updateCurrentPrice(price) {
-      // Удаляем старую линию текущей цены, если она есть
       if (this.priceLine) {
-        this.candlestickSeries.removePriceLine(this.priceLine);
+        const candlestickObj = this.chartObjects.find((obj) => obj.id === "candlestick");
+        if (candlestickObj) {
+          candlestickObj.series.removePriceLine(this.priceLine);
+        }
       }
 
-      // Определяем направление цены
-      let color = "#00FF00"; // Зелёный по умолчанию
+      let color = "#00FF00";
       if (this.previousPrice !== null) {
-        color = price >= this.previousPrice ? "#26a69a" : "#ef5350"; // Зелёный если вверх, красный если вниз
+        color = price >= this.previousPrice ? "#26a69a" : "#ef5350";
       } else if (this.lastCandle) {
-        // Если это первая цена, используем направление последней свечи
         color = this.lastCandle.close >= this.lastCandle.open ? "#26a69a" : "#ef5350";
       }
       this.previousPrice = price;
 
-      // Форматируем цену с двумя знаками после запятой
       const formattedPrice = price.toFixed(2);
 
-      // Создаём новую линию текущей цены
-      this.priceLine = this.candlestickSeries.createPriceLine({
-        price: price,
-        color: color, // Цвет линии совпадает с направлением
-        lineWidth: 1,
-        lineStyle: LineStyle.Solid,
-        axisLabelVisible: true,
-        title: "", // Убираем подпись "Текущая цена"
-        axisLabelColor: color, // Цвет фона метки совпадает с линией
-        axisLabelTextColor: "#FFFFFF", // Белый текст для метки (как у объёма)
-        priceFormatter: () => formattedPrice, // Форматируем цену
-      });
+      const candlestickObj = this.chartObjects.find((obj) => obj.id === "candlestick");
+      if (candlestickObj && candlestickObj.visible) {
+        this.priceLine = candlestickObj.series.createPriceLine({
+          price: price,
+          color: color,
+          lineWidth: 1,
+          lineStyle: LineStyle.Solid,
+          axisLabelVisible: true,
+          title: "",
+          axisLabelColor: color,
+          axisLabelTextColor: "#FFFFFF",
+          priceFormatter: () => formattedPrice,
+        });
+      }
     },
     handleHistoricalData(message) {
       if (message.type === "historical") {
@@ -334,21 +426,32 @@ export default {
           color: parseFloat(kline.close) >= parseFloat(kline.open) ? "#26a69a" : "#ef5350",
         }));
 
-        const existingData = this.candlestickSeries.data();
-        if (existingData.length > 0) {
-          const newData = candlestickData.filter(
-            (newCandle) => !existingData.some((existingCandle) => existingCandle.time === newCandle.time)
-          );
-          const combinedCandlestickData = [...existingData, ...newData].sort((a, b) => a.time - b.time);
-          const combinedVolumeData = [...this.volumeSeries.data(), ...volumeData]
-            .filter((v, i, self) => self.findIndex((t) => t.time === v.time) === i)
-            .sort((a, b) => a.time - b.time);
+        const candlestickObj = this.chartObjects.find((obj) => obj.id === "candlestick");
+        const volumeObj = this.chartObjects.find((obj) => obj.id === "volume");
 
-          this.candlestickSeries.setData(combinedCandlestickData);
-          this.volumeSeries.setData(combinedVolumeData);
-        } else {
-          this.candlestickSeries.setData(candlestickData);
-          this.volumeSeries.setData(volumeData);
+        if (candlestickObj) {
+          const existingData = candlestickObj.series.data();
+          if (existingData.length > 0) {
+            const newData = candlestickData.filter(
+              (newCandle) => !existingData.some((existingCandle) => existingCandle.time === newCandle.time)
+            );
+            const combinedCandlestickData = [...existingData, ...newData].sort((a, b) => a.time - b.time);
+            candlestickObj.series.setData(combinedCandlestickData);
+          } else {
+            candlestickObj.series.setData(candlestickData);
+          }
+        }
+
+        if (volumeObj) {
+          const existingVolumeData = volumeObj.series.data();
+          if (existingVolumeData.length > 0) {
+            const combinedVolumeData = [...existingVolumeData, ...volumeData]
+              .filter((v, i, self) => self.findIndex((t) => t.time === v.time) === i)
+              .sort((a, b) => a.time - b.time);
+            volumeObj.series.setData(combinedVolumeData);
+          } else {
+            volumeObj.series.setData(volumeData);
+          }
         }
       } else {
         console.error("Неверный формат исторических данных:", message);
@@ -393,8 +496,19 @@ export default {
 </script>
 
 <style scoped>
-#chart-container {
+.chart-container {
   width: 100%;
   height: 600px;
+}
+
+.controls {
+  margin-bottom: 10px;
+}
+
+.control-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 5px;
 }
 </style>

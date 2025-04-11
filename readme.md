@@ -1,7 +1,3 @@
-wsl --shutdown
-Optimize-VHD -Path 'C:\Users\home\AppData\Local\Docker\wsl\data\ext4.vhdx' -Mode Full
-
-
 Описание файлов серверной части:
 app_state.rs
 Что делает: Определяет состояние приложения (AppState), которое используется для передачи данных между компонентами сервера.
