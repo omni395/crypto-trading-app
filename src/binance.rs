@@ -32,11 +32,21 @@ pub async fn get_historical_data(
     };
 
     match fetch_historical_data(&state, request).await {
-        Ok(historical_data) => HttpResponse::Ok().json(json!({
-            "type": "historical",
-            "data": historical_data
-        })),
-        Err(e) => HttpResponse::InternalServerError().body(format!("Error: {:?}", e)),
+        Ok(historical_data) => {
+            log::info!(
+                "Успешно возвращены исторические данные для {}: {} записей",
+                query.symbol,
+                historical_data.len()
+            );
+            HttpResponse::Ok().json(json!({
+                "type": "historical",
+                "data": historical_data
+            }))
+        }
+        Err(e) => {
+            log::error!("Ошибка при загрузке исторических данных: {:?}", e);
+            HttpResponse::InternalServerError().body(format!("Error: {:?}", e))
+        }
     }
 }
 
@@ -46,8 +56,22 @@ pub async fn fetch_historical_data(
 ) -> Result<Vec<serde_json::Value>, Box<dyn std::error::Error>> {
     let key = format!("historical:{}:{}", request.start_time, request.end_time);
     if let Ok(Some(cached_data)) = state.db.get_cached_historical_data(&key).await {
-        println!("Данные взяты из кэша Redis");
+        log::info!("Данные взяты из кэша Redis для ключа {} ({} записей)", key, cached_data.len());
         return Ok(cached_data);
+    }
+
+    if request.start_time < 0 || request.end_time < 0 {
+        return Err(Box::new(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "Start time and end time must be positive",
+        )));
+    }
+
+    if request.start_time >= request.end_time {
+        return Err(Box::new(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "Start time must be less than end time",
+        )));
     }
 
     let client = reqwest::Client::new();
@@ -56,31 +80,48 @@ pub async fn fetch_historical_data(
         "https://api.binance.com/api/v3/klines?symbol={}&interval={}&startTime={}&endTime={}&limit=1000",
         symbol, request.interval, request.start_time, request.end_time
     );
-    println!("Отправлен запрос на исторические данные: {}", url);
+    log::info!(
+        "Отправлен запрос на Binance API: {} (интервал: {} сек)",
+        url,
+        (request.end_time - request.start_time) / 1000
+    );
 
     let response = client.get(&url).send().await?;
     let data: Vec<Vec<serde_json::Value>> = response.json().await?;
-    let historical_data: Vec<serde_json::Value> = data.into_iter().map(|kline| {
-        let time = kline[0].as_i64().unwrap() / 1000;
-        let open = kline[1].as_str().unwrap().parse::<f64>().unwrap_or(0.0);
-        let high = kline[2].as_str().unwrap().parse::<f64>().unwrap_or(0.0);
-        let low = kline[3].as_str().unwrap().parse::<f64>().unwrap_or(0.0);
-        let close = kline[4].as_str().unwrap().parse::<f64>().unwrap_or(0.0);
-        let volume = kline[5].as_str().unwrap().parse::<f64>().unwrap_or(0.0);
+    let historical_data: Vec<serde_json::Value> = data
+        .into_iter()
+        .map(|kline| {
+            let time = kline[0].as_i64().unwrap() / 1000;
+            let open = kline[1].as_str().unwrap().parse::<f64>().unwrap_or(0.0);
+            let high = kline[2].as_str().unwrap().parse::<f64>().unwrap_or(0.0);
+            let low = kline[3].as_str().unwrap().parse::<f64>().unwrap_or(0.0);
+            let close = kline[4].as_str().unwrap().parse::<f64>().unwrap_or(0.0);
+            let volume = kline[5].as_str().unwrap().parse::<f64>().unwrap_or(0.0);
 
-        json!({
-            "event_type": "historical_kline",
-            "time": time,
-            "open": open,
-            "high": high,
-            "low": low,
-            "close": close,
-            "volume": volume,
+            json!({
+                "event_type": "historical_kline",
+                "time": time,
+                "open": open,
+                "high": high,
+                "low": low,
+                "close": close,
+                "volume": volume,
+            })
         })
-    }).collect();
+        .collect();
 
-    state.db.cache_historical_data(&key, &historical_data).await
-        .unwrap_or_else(|e| println!("Failed to cache historical data: {:?}", e));
+    log::info!(
+        "Получено {} записей исторических данных для {} (время: {} - {})",
+        historical_data.len(),
+        symbol,
+        request.start_time,
+        request.end_time
+    );
+    state
+        .db
+        .cache_historical_data(&key, &historical_data)
+        .await
+        .unwrap_or_else(|e| log::error!("Не удалось сохранить данные в кэш: {:?}", e));
 
     Ok(historical_data)
 }
@@ -90,7 +131,7 @@ pub async fn start_binance_ws(state: web::Data<AppState>) {
     loop {
         match tokio_tungstenite::connect_async(ws_url).await {
             Ok((mut ws, _)) => {
-                println!("Подключено к Binance WebSocket: {}", ws_url);
+                log::info!("Подключено к Binance WebSocket: {}", ws_url);
                 while let Some(msg) = ws.next().await {
                     match msg {
                         Ok(tokio_tungstenite::tungstenite::Message::Text(text)) => {
@@ -108,8 +149,11 @@ pub async fn start_binance_ws(state: web::Data<AppState>) {
                                     is_closed: data.k.is_closed,
                                 };
 
-                                state.db.store_kline(&data.symbol, &data.k.interval, &kline).await
-                                    .unwrap_or_else(|e| println!("Failed to store kline: {:?}", e));
+                                state
+                                    .db
+                                    .store_kline(&data.symbol, &data.k.interval, &kline)
+                                    .await
+                                    .unwrap_or_else(|e| log::error!("Не удалось сохранить kline: {:?}", e));
 
                                 let kline_json = json!({
                                     "event_type": "kline",
@@ -138,17 +182,17 @@ pub async fn start_binance_ws(state: web::Data<AppState>) {
                         }
                         Ok(_) => continue,
                         Err(e) => {
-                            println!("Ошибка WebSocket (kline): {:?}", e);
+                            log::error!("Ошибка WebSocket (kline): {:?}", e);
                             break;
                         }
                     }
                 }
             }
             Err(e) => {
-                println!("Не удалось подключиться к Binance WebSocket (kline): {:?}", e);
+                log::error!("Не удалось подключиться к Binance WebSocket (kline): {:?}", e);
             }
         }
-        println!("Переподключение к Binance WebSocket (kline) через 5 секунд...");
+        log::info!("Переподключение к Binance WebSocket (kline) через 5 секунд...");
         tokio::time::sleep(std::time::Duration::from_secs(5)).await;
     }
 }
@@ -158,7 +202,7 @@ pub async fn start_binance_depth_ws(state: web::Data<AppState>) {
     loop {
         match tokio_tungstenite::connect_async(ws_url).await {
             Ok((mut ws, _)) => {
-                println!("Подключено к Binance Depth WebSocket: {}", ws_url);
+                log::info!("Подключено к Binance Depth WebSocket: {}", ws_url);
                 while let Some(msg) = ws.next().await {
                     match msg {
                         Ok(tokio_tungstenite::tungstenite::Message::Text(text)) => {
@@ -180,17 +224,17 @@ pub async fn start_binance_depth_ws(state: web::Data<AppState>) {
                         }
                         Ok(_) => continue,
                         Err(e) => {
-                            println!("Ошибка WebSocket (depth): {:?}", e);
+                            log::error!("Ошибка WebSocket (depth): {:?}", e);
                             break;
                         }
                     }
                 }
             }
             Err(e) => {
-                println!("Не удалось подключиться к Binance Depth WebSocket: {:?}", e);
+                log::error!("Не удалось подключиться к Binance Depth WebSocket: {:?}", e);
             }
         }
-        println!("Переподключение к Binance Depth WebSocket через 5 секунд...");
+        log::info!("Переподключение к Binance Depth WebSocket через 5 секунд...");
         tokio::time::sleep(std::time::Duration::from_secs(5)).await;
     }
 }

@@ -28,9 +28,9 @@ export default {
   },
   async mounted() {
     this.initChart();
-    await this.setupWebSocket(); // Дожидаемся подключения WebSocket
+    await this.setupWebSocket();
     this.requestHistoricalData();
-    this.loadDrawingLines(); // Теперь безопасно вызывать после открытия WebSocket
+    this.loadDrawingLines();
   },
   methods: {
     initChart() {
@@ -42,7 +42,7 @@ export default {
 
       this.chart = createChart(chartContainer, {
         width: chartContainer.clientWidth,
-        height: chartContainer.clientHeight || 400, // Устанавливаем высоту по умолчанию, если не определена
+        height: chartContainer.clientHeight || 600,
         layout: {
           background: { color: "#222" },
           textColor: "#DDD",
@@ -78,7 +78,7 @@ export default {
         },
         priceScaleId: "",
         scaleMargins: {
-          top: 0.8,
+          top: 1.9,
           bottom: 0,
         },
       });
@@ -103,6 +103,11 @@ export default {
           this.drawnLines.push({ price, time, line });
           this.saveDrawingLine(price, time);
         }
+      });
+
+      chartContainer.addEventListener("contextmenu", (e) => {
+        e.preventDefault();
+        this.enableDrawing(null);
       });
     },
     async setupWebSocket() {
@@ -152,34 +157,51 @@ export default {
     },
     async requestHistoricalData() {
       const now = Math.floor(Date.now() / 1000);
-      const startTime = now - 60 * 60 * 24; // 24 часа назад
+      const startOfYesterday = Math.floor(new Date().setHours(0, 0, 0, 0) / 1000) - 24 * 60 * 60; // Начало вчерашнего дня (10.04 00:00)
 
-      const url = `http://127.0.0.1:3000/historical?symbol=${this.symbol}&interval=${this.interval}&start_time=${startTime * 1000}&end_time=${now * 1000}`;
-      console.log("Запрошены исторические данные:", url);
+      // Загружаем данные с начала вчерашнего дня до текущего времени
+      const initialUrl = `http://127.0.0.1:3000/historical?symbol=${this.symbol}&interval=${this.interval}&start_time=${startOfYesterday * 1000}&end_time=${now * 1000}`;
+      console.log("Запрошены начальные исторические данные с начала вчера:", initialUrl);
 
       try {
-        const response = await fetch(url);
+        const response = await fetch(initialUrl);
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`);
         }
         const message = await response.json();
-        console.log("Получены исторические данные:", message);
+        console.log("Получены начальные исторические данные:", message.data.length, "свечей");
         this.handleHistoricalData(message);
+        this.earliestTime = startOfYesterday;
       } catch (error) {
-        console.error("Ошибка при запросе исторических данных:", error);
+        console.error("Ошибка при запросе начальных исторических данных:", error);
       }
-
-      this.earliestTime = startTime;
     },
     async loadMoreHistoricalData() {
       if (this.isLoading) return;
       this.isLoading = true;
 
-      const newEndTime = this.earliestTime * 1000;
-      const newStartTime = (this.earliestTime - 60 * 60) * 1000;
+      const existingData = this.candlestickSeries.data();
+      if (existingData.length === 0) {
+        this.isLoading = false;
+        return;
+      }
+
+      const earliestCandleTime = Math.min(...existingData.map((c) => c.time));
+      const newEndTime = earliestCandleTime * 1000;
+      const newStartTime = newEndTime - 60 * 60 * 8 * 1000; // 8 часов назад
+
+      if (newStartTime < 0) {
+        console.warn("Достигнуто начало доступных данных");
+        this.isLoading = false;
+        return;
+      }
 
       const url = `http://127.0.0.1:3000/historical?symbol=${this.symbol}&interval=${this.interval}&start_time=${newStartTime}&end_time=${newEndTime}`;
-      console.log("Запрошены дополнительные исторические данные:", url);
+      console.log(
+        "Запрошены дополнительные исторические данные:",
+        url,
+        `от ${new Date(newStartTime).toISOString()} до ${new Date(newEndTime).toISOString()}`
+      );
 
       try {
         const response = await fetch(url);
@@ -187,13 +209,13 @@ export default {
           throw new Error(`HTTP error! status: ${response.status}`);
         }
         const message = await response.json();
-        console.log("Получены дополнительные исторические данные:", message);
+        console.log("Получены дополнительные исторические данные:", message.data.length, "свечей");
         this.handleHistoricalData(message);
+        this.earliestTime = newStartTime / 1000;
       } catch (error) {
         console.error("Ошибка при загрузке данных:", error);
       }
 
-      this.earliestTime = newStartTime / 1000;
       this.isLoading = false;
     },
     handleWebSocketMessage(message) {
@@ -211,7 +233,7 @@ export default {
         color: parseFloat(kline.close) >= parseFloat(kline.open) ? "#26a69a" : "#ef5350",
       };
 
-      console.log("Обновление свечи:", candle);
+      console.log("Обновление свечи:", candle); // Временно включаем для отладки
       console.log("Обновление объема:", volume);
 
       this.candlestickSeries.update(candle);
@@ -219,15 +241,8 @@ export default {
 
       if (this.priceLine) {
         this.candlestickSeries.removePriceLine(this.priceLine);
+        this.priceLine = null;
       }
-      this.priceLine = this.candlestickSeries.createPriceLine({
-        price: candle.close,
-        color: "#FFD700",
-        lineWidth: 1,
-        lineStyle: LineStyle.Solid,
-        axisLabelVisible: true,
-        title: "Текущая цена",
-      });
     },
     handleHistoricalData(message) {
       if (message.type === "historical") {
@@ -245,23 +260,49 @@ export default {
           color: parseFloat(kline.close) >= parseFloat(kline.open) ? "#26a69a" : "#ef5350",
         }));
 
-        console.log("Исторические свечи:", candlestickData);
-        console.log("Исторические объемы:", volumeData);
+        console.log("Исторические свечи:", candlestickData.length, candlestickData);
+        console.log("Исторические объемы:", volumeData.length);
 
-        if (this.candlestickSeries.data().length > 0) {
-          const existingData = this.candlestickSeries.data();
+        // Проверяем непрерывность свечей
+        for (let i = 1; i < candlestickData.length; i++) {
+          const timeDiff = candlestickData[i].time - candlestickData[i - 1].time;
+          if (timeDiff > 60) { // 60 секунд = 1 минута
+            console.warn(
+              `Обнаружен разрыв в исторических данных: между ${new Date(candlestickData[i - 1].time * 1000).toISOString()} и ${new Date(candlestickData[i].time * 1000).toISOString()} (${timeDiff / 60} минут)`
+            );
+          }
+        }
+
+        const existingData = this.candlestickSeries.data();
+        if (existingData.length > 0) {
           const newData = candlestickData.filter(
-            (newCandle) =>
-              !existingData.some(
-                (existingCandle) => existingCandle.time === newCandle.time
-              )
+            (newCandle) => !existingData.some((existingCandle) => existingCandle.time === newCandle.time)
           );
-          this.candlestickSeries.setData([...newData, ...existingData]);
-          this.volumeSeries.setData([...volumeData, ...this.volumeSeries.data()]);
+          const combinedCandlestickData = [...existingData, ...newData].sort((a, b) => a.time - b.time);
+          const combinedVolumeData = [...this.volumeSeries.data(), ...volumeData]
+            .filter((v, i, self) => self.findIndex((t) => t.time === v.time) === i)
+            .sort((a, b) => a.time - b.time);
+          console.log("Комбинированные данные:", combinedCandlestickData.length, "свечей");
+
+          // Проверяем непрерывность комбинированных данных
+          for (let i = 1; i < combinedCandlestickData.length; i++) {
+            const timeDiff = combinedCandlestickData[i].time - combinedCandlestickData[i - 1].time;
+            if (timeDiff > 60) {
+              console.warn(
+                `Обнаружен разрыв в комбинированных данных: между ${new Date(combinedCandlestickData[i - 1].time * 1000).toISOString()} и ${new Date(combinedCandlestickData[i].time * 1000).toISOString()} (${timeDiff / 60} минут)`
+              );
+            }
+          }
+
+          this.candlestickSeries.setData(combinedCandlestickData);
+          this.volumeSeries.setData(combinedVolumeData);
         } else {
           this.candlestickSeries.setData(candlestickData);
           this.volumeSeries.setData(volumeData);
         }
+
+        const lastCandle = this.candlestickSeries.data().slice(-1)[0];
+        console.log("Последняя свеча на графике:", lastCandle);
       } else {
         console.error("Неверный формат исторических данных:", message);
       }
@@ -307,6 +348,6 @@ export default {
 <style scoped>
 #chart-container {
   width: 100%;
-  height: 600px; /* Устанавливаем фиксированную высоту */
+  height: 600px;
 }
 </style>
