@@ -1,13 +1,5 @@
 wsl --shutdown
-wsl.exe --list --verbose
-diskpart
-select vdisk file="C:\Users\home\AppData\Local\Docker\wsl\disk\docker_data.vhdx"
-compact vdisk
-
-
-<h1 align="center">Hi there, I'm <a href="https://daniilshat.ru/" target="_blank">Daniil</a> 
-<img src="https://github.com/blackcater/blackcater/raw/main/images/Hi.gif" height="32"/></h1>
-<h3 align="center">Computer science student, IT news writer from Russia 🇷🇺</h3>
+Optimize-VHD -Path 'C:\Users\home\AppData\Local\Docker\wsl\data\ext4.vhdx' -Mode Full
 
 
 Описание файлов серверной части:

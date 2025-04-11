@@ -24,6 +24,8 @@ export default {
       isLoading: false,
       drawingTool: null,
       drawnLines: [],
+      previousPrice: null, // Для отслеживания направления цены
+      lastCandle: null, // Для хранения последней свечи
     };
   },
   async mounted() {
@@ -60,25 +62,55 @@ export default {
         },
         rightPriceScale: {
           borderColor: "#444",
+          autoScale: true, // Автоматическое масштабирование для свечей
         },
       });
 
+      // Добавляем шкалу цен для свечей
       this.candlestickSeries = this.chart.addCandlestickSeries({
         upColor: "#26a69a",
         downColor: "#ef5350",
         borderVisible: false,
         wickUpColor: "#26a69a",
         wickDownColor: "#ef5350",
+        priceScaleId: "right", // Шкала цен для свечей
       });
 
+      // Определяем шкалу цен для объёмов
+      this.chart.applyOptions({
+        priceScale: [
+          {
+            id: "right", // Шкала для свечей
+            visible: true,
+            autoScale: true,
+          },
+          {
+            id: "volume", // Шкала для объёмов
+            visible: true,
+            scaleMargins: {
+              top: 0.8, // Начинается на 80% высоты графика (снизу)
+              bottom: 0, // Доходит до низа графика
+            },
+            autoScale: true, // Включаем автоматическое масштабирование
+          },
+        ],
+      });
+
+      // Добавляем гистограмму объёмов
       this.volumeSeries = this.chart.addHistogramSeries({
         color: "#26a69a",
         priceFormat: {
           type: "volume",
+          formatter: (value) => {
+            // Форматируем значения объёмов
+            if (value >= 1000000) return `${(value / 1000000).toFixed(1)}M`;
+            if (value >= 1000) return `${(value / 1000).toFixed(1)}K`;
+            return value.toFixed(0); // Для значений меньше 1000 показываем как есть
+          },
         },
-        priceScaleId: "",
+        priceScaleId: "volume", // Привязываем к шкале "volume"
         scaleMargins: {
-          top: 1.9,
+          top: 0.8, // Объёмы занимают нижние 20% графика
           bottom: 0,
         },
       });
@@ -171,6 +203,16 @@ export default {
         console.log("Получены начальные исторические данные:", message.data.length, "свечей");
         this.handleHistoricalData(message);
         this.earliestTime = startOfYesterday;
+
+        // После загрузки исторических данных добавляем линию текущей цены
+        if (message.data.length > 0) {
+          const lastCandle = message.data[message.data.length - 1];
+          this.lastCandle = {
+            open: parseFloat(lastCandle.open),
+            close: parseFloat(lastCandle.close),
+          };
+          this.updateCurrentPrice(parseFloat(lastCandle.close));
+        }
       } catch (error) {
         console.error("Ошибка при запросе начальных исторических данных:", error);
       }
@@ -232,13 +274,49 @@ export default {
         color: parseFloat(kline.close) >= parseFloat(kline.open) ? "#26a69a" : "#ef5350",
       };
 
+      // Сохраняем последнюю свечу для определения направления
+      this.lastCandle = {
+        open: parseFloat(kline.open),
+        close: parseFloat(kline.close),
+      };
+
       this.candlestickSeries.update(candle);
       this.volumeSeries.update(volume);
 
+      // Обновляем текущую цену
+      this.updateCurrentPrice(candle.close);
+    },
+    updateCurrentPrice(price) {
+      // Удаляем старую линию текущей цены, если она есть
       if (this.priceLine) {
         this.candlestickSeries.removePriceLine(this.priceLine);
-        this.priceLine = null;
       }
+
+      // Определяем направление цены
+      let color = "#00FF00"; // Зелёный по умолчанию
+      if (this.previousPrice !== null) {
+        color = price >= this.previousPrice ? "#26a69a" : "#ef5350"; // Зелёный если вверх, красный если вниз
+      } else if (this.lastCandle) {
+        // Если это первая цена, используем направление последней свечи
+        color = this.lastCandle.close >= this.lastCandle.open ? "#26a69a" : "#ef5350";
+      }
+      this.previousPrice = price;
+
+      // Форматируем цену с двумя знаками после запятой
+      const formattedPrice = price.toFixed(2);
+
+      // Создаём новую линию текущей цены
+      this.priceLine = this.candlestickSeries.createPriceLine({
+        price: price,
+        color: color, // Цвет линии совпадает с направлением
+        lineWidth: 1,
+        lineStyle: LineStyle.Solid,
+        axisLabelVisible: true,
+        title: "", // Убираем подпись "Текущая цена"
+        axisLabelColor: color, // Цвет фона метки совпадает с линией
+        axisLabelTextColor: "#FFFFFF", // Белый текст для метки (как у объёма)
+        priceFormatter: () => formattedPrice, // Форматируем цену
+      });
     },
     handleHistoricalData(message) {
       if (message.type === "historical") {
