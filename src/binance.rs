@@ -3,6 +3,7 @@ use futures_util::StreamExt;
 use actix_web::{web, HttpResponse};
 use reqwest;
 use serde::Deserialize;
+use std::cmp::min; // Добавляем импорт для функции min
 
 use crate::app_state::AppState;
 use crate::models::{KlineEvent, DepthEvent};
@@ -76,54 +77,74 @@ pub async fn fetch_historical_data(
 
     let client = reqwest::Client::new();
     let symbol = request.symbol.to_uppercase();
-    let url = format!(
-        "https://api.binance.com/api/v3/klines?symbol={}&interval={}&startTime={}&endTime={}&limit=1000",
-        symbol, request.interval, request.start_time, request.end_time
-    );
-    log::info!(
-        "Отправлен запрос на Binance API: {} (интервал: {} сек)",
-        url,
-        (request.end_time - request.start_time) / 1000
-    );
+    let mut all_historical_data = Vec::new();
+    let mut current_start = request.start_time;
+    const LIMIT: i64 = 1000; // Ограничение Binance API
+    const INTERVAL_SECONDS: i64 = 60; // 1 минута в миллисекундах
 
-    let response = client.get(&url).send().await?;
-    let data: Vec<Vec<serde_json::Value>> = response.json().await?;
-    let historical_data: Vec<serde_json::Value> = data
-        .into_iter()
-        .map(|kline| {
-            let time = kline[0].as_i64().unwrap() / 1000;
-            let open = kline[1].as_str().unwrap().parse::<f64>().unwrap_or(0.0);
-            let high = kline[2].as_str().unwrap().parse::<f64>().unwrap_or(0.0);
-            let low = kline[3].as_str().unwrap().parse::<f64>().unwrap_or(0.0);
-            let close = kline[4].as_str().unwrap().parse::<f64>().unwrap_or(0.0);
-            let volume = kline[5].as_str().unwrap().parse::<f64>().unwrap_or(0.0);
+    // Разбиваем интервал на куски по 1000 свечей
+    while current_start < request.end_time {
+        let current_end = min(current_start + LIMIT * INTERVAL_SECONDS * 1000, request.end_time);
+        let url = format!(
+            "https://api.binance.com/api/v3/klines?symbol={}&interval={}&startTime={}&endTime={}&limit={}",
+            symbol, request.interval, current_start, current_end, LIMIT
+        );
+        log::info!(
+            "Отправлен запрос на Binance API: {} (интервал: {} сек)",
+            url,
+            (current_end - current_start) / 1000
+        );
 
-            json!({
-                "event_type": "historical_kline",
-                "time": time,
-                "open": open,
-                "high": high,
-                "low": low,
-                "close": close,
-                "volume": volume,
+        let response = client.get(&url).send().await?;
+        let data: Vec<Vec<serde_json::Value>> = response.json().await?;
+        let historical_data: Vec<serde_json::Value> = data
+            .into_iter()
+            .map(|kline| {
+                let time = kline[0].as_i64().unwrap() / 1000;
+                let open = kline[1].as_str().unwrap().parse::<f64>().unwrap_or(0.0);
+                let high = kline[2].as_str().unwrap().parse::<f64>().unwrap_or(0.0);
+                let low = kline[3].as_str().unwrap().parse::<f64>().unwrap_or(0.0);
+                let close = kline[4].as_str().unwrap().parse::<f64>().unwrap_or(0.0);
+                let volume = kline[5].as_str().unwrap().parse::<f64>().unwrap_or(0.0);
+
+                json!({
+                    "event_type": "historical_kline",
+                    "time": time,
+                    "open": open,
+                    "high": high,
+                    "low": low,
+                    "close": close,
+                    "volume": volume,
+                })
             })
-        })
-        .collect();
+            .collect();
 
-    log::info!(
-        "Получено {} записей исторических данных для {} (время: {} - {})",
-        historical_data.len(),
-        symbol,
-        request.start_time,
-        request.end_time
-    );
+        log::info!(
+            "Получено {} записей исторических данных для {} (время: {} - {})",
+            historical_data.len(),
+            symbol,
+            current_start,
+            current_end
+        );
+
+        all_historical_data.extend(historical_data);
+        current_start = current_end;
+    }
+
+    // Сортируем данные по времени (на всякий случай)
+    all_historical_data.sort_by(|a, b| {
+        let time_a = a["time"].as_i64().unwrap_or(0);
+        let time_b = b["time"].as_i64().unwrap_or(0);
+        time_a.cmp(&time_b)
+    });
+
     state
         .db
-        .cache_historical_data(&key, &historical_data)
+        .cache_historical_data(&key, &all_historical_data)
         .await
         .unwrap_or_else(|e| log::error!("Не удалось сохранить данные в кэш: {:?}", e));
 
-    Ok(historical_data)
+    Ok(all_historical_data)
 }
 
 pub async fn start_binance_ws(state: web::Data<AppState>) {

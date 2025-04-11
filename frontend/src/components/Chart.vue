@@ -159,12 +159,11 @@ export default {
       const now = Math.floor(Date.now() / 1000);
       const startOfYesterday = Math.floor(new Date().setHours(0, 0, 0, 0) / 1000) - 24 * 60 * 60; // Начало вчерашнего дня (10.04 00:00)
 
-      // Загружаем данные с начала вчерашнего дня до текущего времени
-      const initialUrl = `http://127.0.0.1:3000/historical?symbol=${this.symbol}&interval=${this.interval}&start_time=${startOfYesterday * 1000}&end_time=${now * 1000}`;
-      console.log("Запрошены начальные исторические данные с начала вчера:", initialUrl);
+      const url = `http://127.0.0.1:3000/historical?symbol=${this.symbol}&interval=${this.interval}&start_time=${startOfYesterday * 1000}&end_time=${now * 1000}`;
+      console.log("Запрошены начальные исторические данные с начала вчера:", url);
 
       try {
-        const response = await fetch(initialUrl);
+        const response = await fetch(url);
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`);
         }
@@ -233,9 +232,6 @@ export default {
         color: parseFloat(kline.close) >= parseFloat(kline.open) ? "#26a69a" : "#ef5350",
       };
 
-      console.log("Обновление свечи:", candle); // Временно включаем для отладки
-      console.log("Обновление объема:", volume);
-
       this.candlestickSeries.update(candle);
       this.volumeSeries.update(volume);
 
@@ -260,19 +256,6 @@ export default {
           color: parseFloat(kline.close) >= parseFloat(kline.open) ? "#26a69a" : "#ef5350",
         }));
 
-        console.log("Исторические свечи:", candlestickData.length, candlestickData);
-        console.log("Исторические объемы:", volumeData.length);
-
-        // Проверяем непрерывность свечей
-        for (let i = 1; i < candlestickData.length; i++) {
-          const timeDiff = candlestickData[i].time - candlestickData[i - 1].time;
-          if (timeDiff > 60) { // 60 секунд = 1 минута
-            console.warn(
-              `Обнаружен разрыв в исторических данных: между ${new Date(candlestickData[i - 1].time * 1000).toISOString()} и ${new Date(candlestickData[i].time * 1000).toISOString()} (${timeDiff / 60} минут)`
-            );
-          }
-        }
-
         const existingData = this.candlestickSeries.data();
         if (existingData.length > 0) {
           const newData = candlestickData.filter(
@@ -282,17 +265,6 @@ export default {
           const combinedVolumeData = [...this.volumeSeries.data(), ...volumeData]
             .filter((v, i, self) => self.findIndex((t) => t.time === v.time) === i)
             .sort((a, b) => a.time - b.time);
-          console.log("Комбинированные данные:", combinedCandlestickData.length, "свечей");
-
-          // Проверяем непрерывность комбинированных данных
-          for (let i = 1; i < combinedCandlestickData.length; i++) {
-            const timeDiff = combinedCandlestickData[i].time - combinedCandlestickData[i - 1].time;
-            if (timeDiff > 60) {
-              console.warn(
-                `Обнаружен разрыв в комбинированных данных: между ${new Date(combinedCandlestickData[i - 1].time * 1000).toISOString()} и ${new Date(combinedCandlestickData[i].time * 1000).toISOString()} (${timeDiff / 60} минут)`
-              );
-            }
-          }
 
           this.candlestickSeries.setData(combinedCandlestickData);
           this.volumeSeries.setData(combinedVolumeData);
@@ -300,9 +272,6 @@ export default {
           this.candlestickSeries.setData(candlestickData);
           this.volumeSeries.setData(volumeData);
         }
-
-        const lastCandle = this.candlestickSeries.data().slice(-1)[0];
-        console.log("Последняя свеча на графике:", lastCandle);
       } else {
         console.error("Неверный формат исторических данных:", message);
       }
