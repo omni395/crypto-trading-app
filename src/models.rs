@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct KlineEvent {
     #[serde(rename = "E")]
     pub event_time: u64,
@@ -9,7 +9,7 @@ pub struct KlineEvent {
     pub k: Kline,
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct Kline {
     #[serde(rename = "t")]
     pub start_time: u64,
@@ -43,9 +43,18 @@ pub struct DepthEvent {
     pub asks: Vec<Vec<String>>,
 }
 
-#[derive(Serialize, Deserialize)]
-pub struct DrawingLine {
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Drawing {
+    pub drawing_type: String,  // Тип объекта (например, "drawing.line", "drawing.brush")
     pub symbol: String,
     pub price: f64,
     pub time: i64,
+    pub color: String,
+    pub line_width: i32,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct WebSocketMessage {
+    pub event_type: String,
+    pub kline: Option<Kline>,
 }

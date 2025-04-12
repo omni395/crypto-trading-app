@@ -4,17 +4,17 @@ import { defineStore } from 'pinia';
 export const useChartStore = defineStore('chart', {
   state: () => ({
     chart: null,
-    chartObjects: [],
-    priceLine: null,
     websocket: null,
-    symbol: "BTCUSDT",
-    interval: "1m",
-    earliestTime: null,
-    isLoading: false,
-    drawingTool: null,
+    symbol: 'BTCUSDT',
+    interval: '1m',
+    chartObjects: [],
     drawnLines: [],
-    previousPrice: null,
+    drawingTool: null,
+    isLoading: false,
+    earliestTime: null,
     lastCandle: null,
+    previousPrice: null,
+    priceLine: null,
   }),
   actions: {
     setChart(chart) {
@@ -23,17 +23,8 @@ export const useChartStore = defineStore('chart', {
     setWebsocket(websocket) {
       this.websocket = websocket;
     },
-    addChartObject(obj) {
-      this.chartObjects.push(obj);
-    },
-    updatePriceLine(priceLine) {
-      this.priceLine = priceLine;
-    },
-    setEarliestTime(time) {
-      this.earliestTime = time;
-    },
-    setLoading(loading) {
-      this.isLoading = loading;
+    addChartObject(object) {
+      this.chartObjects.push(object);
     },
     setDrawingTool(tool) {
       this.drawingTool = tool;
@@ -41,11 +32,27 @@ export const useChartStore = defineStore('chart', {
     addDrawnLine(line) {
       this.drawnLines.push(line);
     },
-    setPreviousPrice(price) {
-      this.previousPrice = price;
+    removeDrawnLine(index) {
+      this.drawnLines.splice(index, 1);
+    },
+    // Добавляем новый метод для обновления линии
+    updateDrawnLine(index, updatedLine) {
+      this.drawnLines[index] = updatedLine;
+    },
+    setLoading(loading) {
+      this.isLoading = loading;
+    },
+    setEarliestTime(time) {
+      this.earliestTime = time;
     },
     setLastCandle(candle) {
       this.lastCandle = candle;
+    },
+    setPreviousPrice(price) {
+      this.previousPrice = price;
+    },
+    updatePriceLine(priceLine) {
+      this.priceLine = priceLine;
     },
   },
 });

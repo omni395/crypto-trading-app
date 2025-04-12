@@ -1,12 +1,15 @@
 use serde_json::json;
-use futures_util::StreamExt;
+use futures_util::{SinkExt, StreamExt};
 use actix_web::{web, HttpResponse};
 use reqwest;
 use serde::Deserialize;
-use std::cmp::min; // Добавляем импорт для функции min
+use std::cmp::min;
+use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
+use tokio::sync::mpsc;
+use redis::Commands;
 
 use crate::app_state::AppState;
-use crate::models::{KlineEvent, DepthEvent};
+use crate::models::{KlineEvent, DepthEvent, WebSocketMessage};
 
 #[derive(Deserialize, Debug)]
 pub struct HistoricalRequest {
@@ -32,7 +35,7 @@ pub async fn get_historical_data(
         end_time: query.end_time,
     };
 
-    match fetch_historical_data(&state, request).await {
+    match fetch_historical_data(state.clone(), request).await {
         Ok(historical_data) => {
             log::info!(
                 "Успешно возвращены исторические данные для {}: {} записей",
@@ -51,14 +54,19 @@ pub async fn get_historical_data(
     }
 }
 
+#[allow(deprecated)]
 pub async fn fetch_historical_data(
-    state: &web::Data<AppState>,
+    state: web::Data<AppState>,
     request: HistoricalRequest,
 ) -> Result<Vec<serde_json::Value>, Box<dyn std::error::Error>> {
     let key = format!("historical:{}:{}", request.start_time, request.end_time);
-    if let Ok(Some(cached_data)) = state.db.get_cached_historical_data(&key).await {
-        log::info!("Данные взяты из кэша Redis для ключа {} ({} записей)", key, cached_data.len());
-        return Ok(cached_data);
+    let mut redis_con = state.redis_client.get_connection()?;
+    let cached_data: Option<String> = redis_con.get(&key).ok();
+
+    if let Some(cached_data) = cached_data {
+        let data: Vec<serde_json::Value> = serde_json::from_str(&cached_data)?;
+        log::info!("Данные взяты из кэша Redis для ключа {} ({} записей)", key, data.len());
+        return Ok(data);
     }
 
     if request.start_time < 0 || request.end_time < 0 {
@@ -127,6 +135,21 @@ pub async fn fetch_historical_data(
             current_end
         );
 
+        for kline_data in &historical_data {
+            let mut redis_con = state.redis_client.get_connection()?;
+            crate::database::save_historical_data(
+                &mut redis_con,
+                &symbol,
+                &request.interval,
+                kline_data["time"].as_i64().unwrap(),
+                &kline_data["open"].to_string(),
+                &kline_data["high"].to_string(),
+                &kline_data["low"].to_string(),
+                &kline_data["close"].to_string(),
+                &kline_data["volume"].to_string(),
+            )?;
+        }
+
         all_historical_data.extend(historical_data);
         current_start = current_end;
     }
@@ -138,11 +161,9 @@ pub async fn fetch_historical_data(
         time_a.cmp(&time_b)
     });
 
-    state
-        .db
-        .cache_historical_data(&key, &all_historical_data)
-        .await
-        .unwrap_or_else(|e| log::error!("Не удалось сохранить данные в кэш: {:?}", e));
+    let serialized_data = serde_json::to_string(&all_historical_data)?;
+    let mut redis_con = state.redis_client.get_connection()?;
+    redis_con.set_ex(&key, serialized_data, 3600)?;
 
     Ok(all_historical_data)
 }
@@ -157,48 +178,28 @@ pub async fn start_binance_ws(state: web::Data<AppState>) {
                     match msg {
                         Ok(tokio_tungstenite::tungstenite::Message::Text(text)) => {
                             if let Ok(data) = serde_json::from_str::<KlineEvent>(&text) {
-                                let kline = crate::models::Kline {
-                                    start_time: data.k.start_time,
-                                    close_time: data.k.close_time,
-                                    symbol: data.k.symbol.clone(),
-                                    interval: data.k.interval.clone(),
-                                    open: data.k.open,
-                                    high: data.k.high,
-                                    low: data.k.low,
-                                    close: data.k.close,
-                                    volume: data.k.volume,
-                                    is_closed: data.k.is_closed,
+                                let kline = data.k;
+
+                                let mut redis_con = state.redis_client.get_connection().unwrap();
+                                crate::database::save_historical_data(
+                                    &mut redis_con,
+                                    &kline.symbol,
+                                    &kline.interval,
+                                    kline.start_time as i64,
+                                    &kline.open,
+                                    &kline.high,
+                                    &kline.low,
+                                    &kline.close,
+                                    &kline.volume,
+                                ).unwrap_or_else(|e| log::error!("Не удалось сохранить kline: {:?}", e));
+
+                                let ws_message = WebSocketMessage {
+                                    event_type: "kline".to_string(),
+                                    kline: Some(kline.clone()),
                                 };
 
-                                state
-                                    .db
-                                    .store_kline(&data.symbol, &data.k.interval, &kline)
-                                    .await
-                                    .unwrap_or_else(|e| log::error!("Не удалось сохранить kline: {:?}", e));
-
-                                let kline_json = json!({
-                                    "event_type": "kline",
-                                    "event_time": data.event_time,
-                                    "symbol": data.symbol,
-                                    "kline": {
-                                        "start_time": kline.start_time,
-                                        "close_time": kline.close_time,
-                                        "symbol": kline.symbol,
-                                        "interval": kline.interval,
-                                        "open": kline.open,
-                                        "high": kline.high,
-                                        "low": kline.low,
-                                        "close": kline.close,
-                                        "volume": kline.volume,
-                                        "is_closed": kline.is_closed,
-                                    }
-                                });
-
-                                let message = kline_json.to_string();
-                                let clients = state.clients.lock().await;
-                                for client in clients.iter() {
-                                    client.send_message(message.clone());
-                                }
+                                let message = serde_json::to_string(&ws_message).unwrap();
+                                state.broadcast(&message).await;
                             }
                         }
                         Ok(_) => continue,
@@ -237,10 +238,7 @@ pub async fn start_binance_depth_ws(state: web::Data<AppState>) {
                                 });
 
                                 let message = depth_json.to_string();
-                                let clients = state.clients.lock().await;
-                                for client in clients.iter() {
-                                    client.send_message(message.clone());
-                                }
+                                state.broadcast(&message).await;
                             }
                         }
                         Ok(_) => continue,
@@ -258,4 +256,81 @@ pub async fn start_binance_depth_ws(state: web::Data<AppState>) {
         log::info!("Переподключение к Binance Depth WebSocket через 5 секунд...");
         tokio::time::sleep(std::time::Duration::from_secs(5)).await;
     }
+}
+
+const BASE_WS_URL: &str = "wss://stream.binance.com:9443/ws";
+
+pub async fn stream_kline_data(
+    symbol: &str,
+    interval: &str,
+    state: &web::Data<AppState>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let stream = format!("{}@kline_{}", symbol.to_lowercase(), interval);
+    let url = format!("{}/{}", BASE_WS_URL, stream);
+    let (ws_stream, _) = connect_async(url).await?;
+    let (mut write, mut read) = ws_stream.split();
+
+    let (tx, mut rx) = mpsc::channel(100);
+
+    tokio::spawn(async move {
+        while let Some(message) = rx.recv().await {
+            if let Err(e) = write.send(Message::Text(message)).await {
+                eprintln!("Ошибка отправки сообщения в WebSocket: {:?}", e);
+                break;
+            }
+        }
+    });
+
+    let subscribe_message = json!({
+        "method": "SUBSCRIBE",
+        "params": [stream],
+        "id": 1
+    })
+    .to_string();
+
+    tx.send(subscribe_message).await?;
+
+    while let Some(message) = read.next().await {
+        match message {
+            Ok(Message::Text(text)) => {
+                if let Ok(kline_event) = serde_json::from_str::<KlineEvent>(&text) {
+                    let kline = kline_event.k;
+
+                    if kline.is_closed {
+                        let ws_message = WebSocketMessage {
+                            event_type: "kline".to_string(),
+                            kline: Some(kline.clone()),
+                        };
+
+                        let message_str = serde_json::to_string(&ws_message)?;
+                        state.broadcast(&message_str).await;
+
+                        let mut redis_con = state.redis_client.get_connection()?;
+                        crate::database::save_historical_data(
+                            &mut redis_con,
+                            &kline_event.symbol,
+                            &kline.interval,
+                            kline.start_time as i64,
+                            &kline.open,
+                            &kline.high,
+                            &kline.low,
+                            &kline.close,
+                            &kline.volume,
+                        )?;
+                    }
+                }
+            }
+            Ok(Message::Close(_)) => {
+                println!("WebSocket соединение закрыто");
+                break;
+            }
+            Err(e) => {
+                eprintln!("Ошибка получения сообщения из WebSocket: {:?}", e);
+                break;
+            }
+            _ => {}
+        }
+    }
+
+    Ok(())
 }

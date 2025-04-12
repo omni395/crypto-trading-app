@@ -153,44 +153,56 @@
       @click.self="showPropertiesModal = false"
       class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
     >
-      <div class="bg-gray-800 p-4 rounded-lg w-96">
-        <h2 class="text-white text-lg mb-4">Свойства линии</h2>
-        <div class="mb-4">
-          <label class="block text-white mb-2">Цвет линии:</label>
-          <input
-            type="color"
-            v-model="selectedLine.color"
-            @change="updateLineProperties"
-            class="w-full h-10 rounded"
-          />
+      <div class="bg-gray-800 p-0 rounded-lg w-96">
+        <div class="flex justify-between items-center p-2 border-b border-gray-600">
+          <h2 class="text-white text-lg">Свойства линии</h2>
+          <button @click="showPropertiesModal = false" class="text-gray-400 hover:text-gray-200">
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 15 15"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+              class="fill-current"
+            >
+              <path
+                d="M12.8536 2.85355C13.0488 2.65829 13.0488 2.34171 12.8536 2.14645C12.6583 1.95118 12.3417 1.95118 12.1464 2.14645L7.5 6.79289L2.85355 2.14645C2.65829 1.95118 2.34171 1.95118 2.14645 2.14645C1.95118 2.34171 1.95118 2.65829 2.14645 2.85355L6.79289 7.5L2.14645 12.1536C1.95118 12.3488 1.95118 12.6654 2.14645 12.8606C2.34171 13.0558 2.65829 13.0558 2.85355 12.8606L7.5 8.20711L12.1464 12.8606C12.3417 13.0558 12.6583 13.0558 12.8536 12.8606C13.0488 12.6654 13.0488 12.3488 12.8536 12.1536L8.20711 7.5L12.8536 2.85355Z"
+                fill="currentColor"
+              />
+            </svg>
+          </button>
         </div>
-        <div class="mb-4">
-          <label class="block text-white mb-2">Толщина линии:</label>
-          <input
-            type="number"
-            v-model.number="selectedLine.lineWidth"
-            @change="updateLineProperties"
-            min="1"
-            max="5"
-            class="w-full p-2 bg-gray-700 text-white rounded"
-          />
+        <div class="p-2">
+          <div class="flex items-center gap-2 mb-2">
+            <label class="text-white w-24">Цвет:</label>
+            <input
+              type="color"
+              v-model="selectedLine.color"
+              @change="updateLineProperties"
+              class="w-10 h-6 rounded"
+            />
+          </div>
+          <div class="flex items-center gap-2 mb-2">
+            <label class="text-white w-24">Толщина:</label>
+            <select
+              v-model.number="selectedLine.lineWidth"
+              @change="updateLineProperties"
+              class="p-1 bg-gray-700 text-white rounded w-16"
+            >
+              <option v-for="size in [1, 2, 3, 4, 5]" :key="size" :value="size">{{ size }}px</option>
+            </select>
+          </div>
+          <div class="flex items-center gap-2 mb-2">
+            <label class="text-white w-24">Цена:</label>
+            <input
+              type="number"
+              v-model.number="selectedLine.price"
+              @change="updateLineProperties"
+              step="0.01"
+              class="p-1 bg-gray-700 text-white rounded w-32"
+            />
+          </div>
         </div>
-        <div class="mb-4">
-          <label class="block text-white mb-2">Уровень цены:</label>
-          <input
-            type="number"
-            v-model.number="selectedLine.price"
-            @change="updateLineProperties"
-            step="0.01"
-            class="w-full p-2 bg-gray-700 text-white rounded"
-          />
-        </div>
-        <button
-          @click="showPropertiesModal = false"
-          class="mt-4 p-2 bg-gray-700 text-white rounded hover:bg-gray-600"
-        >
-          Закрыть
-        </button>
       </div>
     </div>
   </div>
@@ -255,10 +267,10 @@ export default {
         crosshair: {
           mode: CrosshairMode.Normal,
           vertLine: {
-            labelVisible: false, // Отключаем отображение цены на вертикальной линии
+            labelVisible: false,
           },
           horzLine: {
-            labelVisible: false, // Отключаем отображение цены на горизонтальной линии
+            labelVisible: false,
           },
         },
         timeScale: {
@@ -344,16 +356,15 @@ export default {
               lineWidth: 1,
               lineStyle: LineStyle.Dashed,
             });
-            this.chartStore.addDrawnLine({ price, time, line, color: "#FFD700", lineWidth: 1 });
-            this.saveDrawingLine(price, time);
+            this.chartStore.addDrawnLine({ drawing_type: "drawing.line", price, time, line, color: "#FFD700", lineWidth: 1 });
+            this.saveDrawingLine("drawing.line", price, time, "#FFD700", 1);
           }
         } else if (param.point) {
-          // Проверяем, попал ли клик на нарисованную линию
           const candlestickObj = this.chartStore.chartObjects.find((obj) => obj.id === "candlestick");
           if (candlestickObj && candlestickObj.visible) {
             const price = candlestickObj.series.coordinateToPrice(param.point.y);
             const lineIndex = this.chartStore.drawnLines.findIndex(
-              (line) => Math.abs(line.price - price) < 0.5 // Порог для определения клика на линию
+              (line) => Math.abs(line.price - price) < 0.5
             );
             if (lineIndex !== -1) {
               this.openLineProperties(lineIndex);
@@ -403,7 +414,7 @@ export default {
       const candlestickObj = this.chartStore.chartObjects.find((obj) => obj.id === "candlestick");
       if (candlestickObj && line.line) {
         candlestickObj.series.removePriceLine(line.line);
-        this.deleteDrawingLine(line.price, line.time);
+        this.deleteDrawingLine("drawing.line", line.price, line.time);
       }
       this.chartStore.removeDrawnLine(index);
     },
@@ -430,7 +441,7 @@ export default {
           lineWidth: this.selectedLine.lineWidth,
           line: updatedLine,
         });
-        this.saveDrawingLine(this.selectedLine.price, line.time);
+        this.saveDrawingLine("drawing.line", this.selectedLine.price, line.time, this.selectedLine.color, this.selectedLine.lineWidth);
       }
     },
     scrollToLatestCandle() {
@@ -453,16 +464,16 @@ export default {
           } else if (message.event_type === "drawing_saved") {
             console.log("Линия сохранена:", message.status);
           } else if (message.event_type === "drawings_loaded") {
-            message.data.forEach(({ price, time }) => {
+            message.data.forEach(({ drawing_type, price, time, color = "#FFD700", lineWidth = 1 }) => {
               const candlestickObj = this.chartStore.chartObjects.find((obj) => obj.id === "candlestick");
               if (candlestickObj && candlestickObj.visible) {
                 const line = candlestickObj.series.createPriceLine({
                   price,
-                  color: "#FFD700",
-                  lineWidth: 1,
+                  color,
+                  lineWidth,
                   lineStyle: LineStyle.Dashed,
                 });
-                this.chartStore.addDrawnLine({ price, time, line, color: "#FFD700", lineWidth: 1 });
+                this.chartStore.addDrawnLine({ drawing_type, price, time, line, color, lineWidth });
               }
             });
           } else if (message.event_type === "drawing_deleted") {
@@ -680,19 +691,19 @@ export default {
         this.chartStore.chart.timeScale().fitContent();
       }
     },
-    saveDrawingLine(price, time) {
+    saveDrawingLine(drawing_type, price, time, color, lineWidth) {
       const message = {
         event_type: "save_drawing",
-        data: { symbol: this.chartStore.symbol, price, time },
+        data: { drawing_type, symbol: this.chartStore.symbol, price, time, color, lineWidth },
       };
       if (this.chartStore.websocket && this.chartStore.websocket.readyState === WebSocket.OPEN) {
         this.chartStore.websocket.send(JSON.stringify(message));
       }
     },
-    deleteDrawingLine(price, time) {
+    deleteDrawingLine(drawing_type, price, time) {
       const message = {
         event_type: "delete_drawing",
-        data: { symbol: this.chartStore.symbol, price, time },
+        data: { drawing_type, symbol: this.chartStore.symbol, price, time },
       };
       if (this.chartStore.websocket && this.chartStore.websocket.readyState === WebSocket.OPEN) {
         this.chartStore.websocket.send(JSON.stringify(message));
@@ -701,7 +712,7 @@ export default {
     loadDrawingLines() {
       const message = {
         event_type: "load_drawings",
-        data: { symbol: this.chartStore.symbol },
+        data: { drawing_type: "drawing.line", symbol: this.chartStore.symbol },
       };
       if (this.chartStore.websocket && this.chartStore.websocket.readyState === WebSocket.OPEN) {
         this.chartStore.websocket.send(JSON.stringify(message));

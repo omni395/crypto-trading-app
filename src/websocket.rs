@@ -5,7 +5,8 @@ use serde_json::json;
 use std::sync::Arc;
 
 use crate::app_state::AppState;
-use crate::models::DrawingLine;
+use crate::database;
+use crate::models::{Drawing, WebSocketMessage};
 
 pub async fn ws_index(
     req: HttpRequest,
@@ -89,29 +90,71 @@ impl actix::StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession 
                     let event_type = value["event_type"].as_str().unwrap_or("");
                     match event_type {
                         "save_drawing" => {
-                            if let Ok(drawing) = serde_json::from_value::<DrawingLine>(value["data"].clone()) {
-                                let db = self.app_state.db.clone();
+                            if let Ok(drawing) = serde_json::from_value::<Drawing>(value["data"].clone()) {
+                                let mut redis_con = self.app_state.redis_client.get_connection().unwrap();
                                 let addr = ctx.address();
-                                ctx.spawn(actix::fut::wrap_future(async move {
-                                    match db.save_drawing(&drawing).await {
-                                        Ok(_) => addr.do_send(ClientMessage(json!({"event_type": "drawing_saved", "status": "success"}).to_string())),
-                                        Err(e) => addr.do_send(ClientMessage(json!({"event_type": "drawing_saved", "status": "error", "message": e.to_string()}).to_string())),
-                                    }
-                                }));
+                                if let Err(e) = database::save_drawing(&mut redis_con, &drawing) {
+                                    addr.do_send(ClientMessage(json!({"event_type": "drawing_saved", "status": "error", "message": e.to_string()}).to_string()));
+                                    return;
+                                }
+                                addr.do_send(ClientMessage(json!({"event_type": "drawing_saved", "status": "success"}).to_string()));
                             }
                         }
                         "load_drawings" => {
-                            if let Some(symbol) = value["data"]["symbol"].as_str() {
-                                let db = self.app_state.db.clone();
+                            if let Some(data) = value.get("data") {
+                                let symbol = data.get("symbol").and_then(|v| v.as_str()).unwrap_or("");
+                                let drawing_type = data.get("drawing_type").and_then(|v| v.as_str()).unwrap_or("drawing.line");
+                                let mut redis_con = self.app_state.redis_client.get_connection().unwrap();
                                 let addr = ctx.address();
-                                let symbol = symbol.to_string();
-                                ctx.spawn(actix::fut::wrap_future(async move {
-                                    match db.load_drawings(&symbol).await {
-                                        Ok(lines) => addr.do_send(ClientMessage(json!({"event_type": "drawings_loaded", "data": lines}).to_string())),
-                                        Err(e) => addr.do_send(ClientMessage(json!({"event_type": "drawings_loaded", "status": "error", "message": e.to_string()}).to_string())),
-                                    }
-                                }));
+                                match database::load_drawings(&mut redis_con, drawing_type, symbol) {
+                                    Ok(lines) => addr.do_send(ClientMessage(json!({"event_type": "drawings_loaded", "data": lines}).to_string())),
+                                    Err(e) => addr.do_send(ClientMessage(json!({"event_type": "drawings_loaded", "status": "error", "message": e.to_string()}).to_string())),
+                                }
                             }
+                        }
+                        "delete_drawing" => {
+                            if let Some(data) = value.get("data") {
+                                let symbol = data.get("symbol").and_then(|v| v.as_str()).unwrap_or("");
+                                let drawing_type = data.get("drawing_type").and_then(|v| v.as_str()).unwrap_or("drawing.line");
+                                let price = data.get("price").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                                let time = data.get("time").and_then(|v| v.as_i64()).unwrap_or(0);
+                                let mut redis_con = self.app_state.redis_client.get_connection().unwrap();
+                                let addr = ctx.address();
+                                if let Err(e) = database::delete_drawing(&mut redis_con, drawing_type, symbol, price, time) {
+                                    addr.do_send(ClientMessage(json!({"event_type": "drawing_deleted", "status": "error", "message": e.to_string()}).to_string()));
+                                    return;
+                                }
+                                addr.do_send(ClientMessage(json!({"event_type": "drawing_deleted", "status": "success"}).to_string()));
+                            }
+                        }
+                        "kline" => {
+                            let ws_message: WebSocketMessage = match serde_json::from_str(&text) {
+                                Ok(msg) => msg,
+                                Err(_) => return,
+                            };
+                            let mut redis_con = self.app_state.redis_client.get_connection().unwrap();
+                            if let Some(kline) = ws_message.kline {
+                                if let Err(e) = database::save_historical_data(
+                                    &mut redis_con,
+                                    &kline.symbol,
+                                    &kline.interval,
+                                    kline.start_time as i64,
+                                    &kline.open,
+                                    &kline.high,
+                                    &kline.low,
+                                    &kline.close,
+                                    &kline.volume,
+                                ) {
+                                    println!("Failed to save historical data: {:?}", e);
+                                }
+                            }
+                            let app_state = self.app_state.clone();
+                            ctx.spawn(actix::fut::wrap_future(async move {
+                                let clients = app_state.clients.lock().await;
+                                for client in clients.iter() {
+                                    client.send_message(text.to_string());
+                                }
+                            }));
                         }
                         _ => println!("Неизвестный тип события: {}", event_type),
                     }
