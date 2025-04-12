@@ -258,7 +258,7 @@ export default {
         }
         const message = await response.json();
         console.log("Получены начальные исторические данные:", message.data.length, "свечей");
-        this.handleHistoricalData(message);
+        this.handleHistoricalData(message, true);
         this.chartStore.setEarliestTime(startOfYesterday);
 
         if (message.data.length > 0) {
@@ -282,6 +282,10 @@ export default {
         this.chartStore.setLoading(false);
         return;
       }
+
+      // Сохраняем текущий видимый диапазон времени
+      const currentRange = this.chartStore.chart.timeScale().getVisibleRange();
+      console.log("Сохранён текущий временной диапазон:", currentRange);
 
       const existingData = candlestickObj.series.data();
       if (existingData.length > 0) {
@@ -309,7 +313,18 @@ export default {
           }
           const message = await response.json();
           console.log("Получены дополнительные исторические данные:", message.data.length, "свечей");
-          this.handleHistoricalData(message);
+          this.handleHistoricalData(message, false);
+
+          // Восстанавливаем сохранённый диапазон
+          if (currentRange) {
+            try {
+              this.chartStore.chart.timeScale().setVisibleRange(currentRange);
+              console.log("Восстановлен временной диапазон:", currentRange);
+            } catch (error) {
+              console.warn("Не удалось восстановить временной диапазон:", error);
+              // Не центрируем график, оставляем как есть
+            }
+          }
           this.chartStore.setEarliestTime(newStartTime / 1000);
         } catch (error) {
           console.error("Ошибка при загрузке данных:", error);
@@ -384,7 +399,7 @@ export default {
         this.chartStore.updatePriceLine(priceLine);
       }
     },
-    handleHistoricalData(message) {
+    handleHistoricalData(message, isInitialLoad = false) {
       if (!this.chartStore.chart) {
         console.error("Chart is not initialized. Cannot process historical data:", message);
         return;
@@ -436,7 +451,11 @@ export default {
         }
       }
 
-      this.chartStore.chart.timeScale().fitContent();
+      // Центрируем только при начальной загрузке
+      if (isInitialLoad) {
+        this.chartStore.chart.timeScale().fitContent();
+        console.log("График центрирован на последних свечах");
+      }
     },
     enableDrawing(tool) {
       this.chartStore.setDrawingTool(tool);
