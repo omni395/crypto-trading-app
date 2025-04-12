@@ -8,7 +8,8 @@
     "preview": "yarn vite preview"
   },
   "dependencies": {
-    "lightweight-charts": "^4.1.6",
+    "lightweight-charts": "^5.0.5",
+    "pinia": "^2.0.34",
     "vue": "^3.2.13"
   },
   "devDependencies": {
