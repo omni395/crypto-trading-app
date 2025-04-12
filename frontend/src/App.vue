@@ -1,12 +1,12 @@
 <template>
   <!-- Header Section Navbar -->
-  <div>
+  <div class = "bg-gray-800">
     <Navigation />
   </div>
   <!-- Main section -->
   <section class="flex w-full h-screen p-5">
     <!-- Left side with chart -->
-    <div class="w-5/6 p-4 bg-gray-100 rounded-lg shadow-md flex flex-col">
+    <div class="w-5/6 p-4 rounded-lg shadow-md flex flex-col">
       <Chart />
       <div class="flex flex-row">
         <div class="w-1/3">
@@ -24,7 +24,7 @@
       </div>
     </div>
     <!-- Right side with filters and instruments -->
-    <div class="w-1/6 p-4 bg-gray-100 rounded-lg shadow-md flex flex-col">
+    <div class="w-1/6 p-4 rounded-lg shadow-md flex flex-col">
       <div>
         <Filters />
         <InstrumentList />

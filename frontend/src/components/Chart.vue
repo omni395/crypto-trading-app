@@ -1,17 +1,50 @@
 <template>
+  <!-- Корневой контейнер -->
   <div>
+    <!-- Чекбоксы и кнопки удаления -->
     <div class="mb-4">
       <div v-for="obj in chartStore.chartObjects" :key="obj.id" class="flex items-center gap-2 mb-2">
-        <label>
+        <label class="flex items-center gap-2">
           <input type="checkbox" v-model="obj.visible" @change="toggleVisibility(obj)" />
           {{ obj.id }}
         </label>
-        <button @click="removeObject(obj.id)" class="px-4 py-2 bg-gray-700 text-white rounded hover:bg-gray-600">Удалить</button>
+        <button @click="removeObject(obj.id)" class="p-2 bg-gray-700 text-white rounded hover:bg-gray-600" title="Удалить объект">
+          <svg width="20" height="20" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg" class="fill-current">
+            <path d="M5 3V2C5 1.44772 5.44772 1 6 1H9C9.55228 1 10 1.44772 10 2V3H12.5C12.7761 3 13 3.22386 13 3.5C13 3.77614 12.7761 4 12.5 4H12V12C12 12.5523 11.5523 13 11 13H4C3.44772 13 3 12.5523 3 12V4H2.5C2.22386 4 2 3.77614 2 3.5C2 3.22386 2.22386 3 2.5 3H5ZM6 2V3H9V2H6ZM4 4V12H11V4H4ZM6 6C6 5.44772 6.44772 5 7 5C7.55228 5 8 5.44772 8 6V10C8 10.5523 7.55228 11 7 11C6.44772 11 6 10.5523 6 10V6Z" fill="currentColor" />
+          </svg>
+        </button>
       </div>
     </div>
-    <button @click="enableDrawing('line')" class="px-4 py-2 bg-gray-700 text-white rounded hover:bg-gray-600">Рисовать линию</button>
-    <button @click="enableDrawing(null)" class="px-4 py-2 bg-gray-700 text-white rounded hover:bg-gray-600">Отключить рисование</button>
-    <div id="chart-container" ref="chartContainer" class="w-full h-[600px]"></div>
+    <!-- Кнопки рисования -->
+    <div class="flex gap-2 mb-4">
+      <button @click="enableDrawing('line')" class="p-2 bg-gray-700 text-white rounded hover:bg-gray-600" title="Рисовать линию">
+        <svg width="20" height="20" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg" class="fill-current">
+          <path d="M12.2071 2.79289C12.5976 3.18342 12.5976 3.81658 12.2071 4.20711L5.70711 10.7071C5.51957 10.8946 5.26522 11 5 11H3C2.44772 11 2 10.5523 2 10V8C2 7.73478 2.10536 7.48043 2.29289 7.29289L8.79289 0.792893C9.18342 0.402369 9.81658 0.402369 10.2071 0.792893L12.2071 2.79289ZM9.5 2.5L3.5 8.5V9.5H4.5L10.5 3.5L9.5 2.5Z" fill="currentColor" />
+        </svg>
+      </button>
+      <button @click="enableDrawing(null)" class="p-2 bg-gray-700 text-white rounded hover:bg-gray-600" title="Отключить рисование">
+        <svg width="20" height="20" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg" class="fill-current">
+          <path d="M12.8536 2.85355C13.0488 2.65829 13.0488 2.34171 12.8536 2.14645C12.6583 1.95118 12.3417 1.95118 12.1464 2.14645L7.5 6.79289L2.85355 2.14645C2.65829 1.95118 2.34171 1.95118 2.14645 2.14645C1.95118 2.34171 1.95118 2.65829 2.14645 2.85355L6.79289 7.5L2.14645 12.1536C1.95118 12.3488 1.95118 12.6654 2.14645 12.8606C2.34171 13.0558 2.65829 13.0558 2.85355 12.8606L7.5 8.20711L12.1464 12.8606C12.3417 13.0558 12.6583 13.0558 12.8536 12.8606C13.0488 12.6654 13.0488 12.3488 12.8536 12.1536L8.20711 7.5L12.8536 2.85355Z" fill="currentColor" />
+        </svg>
+      </button>
+    </div>
+    <!-- Flex-контейнер для боковой панели и графика -->
+    <div class="flex">
+      <!-- Боковая панель слева -->
+      <div class="w-10 bg-gray-800 h-[600px] flex flex-col items-center py-2">
+        <!-- Пока пусто, для будущих элементов управления -->
+      </div>
+      <!-- Контейнер графика с кнопкой возврата -->
+      <div class="relative flex-1">
+        <div id="chart-container" ref="chartContainer" class="w-full h-[600px]"></div>
+        <button @click="scrollToLatestCandle" class="absolute top-2 right-20 p-2 bg-gray-700 text-white rounded hover:bg-gray-600 z-10" title="Вернуться к текущей свече">
+          <svg width="20" height="20" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg" class="fill-current">
+            <path
+              d="M8.29289 2.29289C8.68342 1.90237 9.31658 1.90237 9.70711 2.29289L14.2071 6.79289C14.5976 7.18342 14.5976 7.81658 14.2071 8.20711L9.70711 12.7071C9.31658 13.0976 8.68342 13.0976 8.29289 12.7071C7.90237 12.3166 7.90237 11.6834 8.29289 11.2929L11 8.5H1.5C0.947715 8.5 0.5 8.05228 0.5 7.5C0.5 6.94772 0.947715 6.5 1.5 6.5H11L8.29289 3.70711C7.90237 3.31658 7.90237 2.68342 8.29289 2.29289Z" fill="currentColor" />
+          </svg>
+        </button>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -62,7 +95,7 @@ export default {
         width: width,
         height: height,
         layout: {
-          background: { color: "#222" },
+          background: { color: "rgb(32, 41, 56)" },
           textColor: "#DDD",
         },
         grid: {
@@ -189,6 +222,16 @@ export default {
         const obj = this.chartStore.chartObjects[index];
         this.chartStore.chart.removeSeries(obj.series);
         this.chartStore.chartObjects.splice(index, 1);
+      }
+    },
+    scrollToLatestCandle() {
+      if (this.chartStore.chart) {
+        try {
+          this.chartStore.chart.timeScale().fitContent();
+          console.log("График возвращён к текущей свече");
+        } catch (error) {
+          console.error("Ошибка при возврате к текущей свече:", error);
+        }
       }
     },
     async setupWebSocket() {
