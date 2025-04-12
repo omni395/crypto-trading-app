@@ -1,6 +1,6 @@
 <template>
   <!-- Header Section Navbar -->
-  <div class = "bg-gray-800">
+  <div class = "">
     <Navigation />
   </div>
   <!-- Main section -->
