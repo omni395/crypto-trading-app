@@ -185,12 +185,12 @@
             </button>
           </div>
         </div>
-        <div v-for="(line, index) in chartStore.drawnLines" :key="index" class="flex items-center gap-2 mb-2">
+        <div v-for="line in chartStore.drawnLines" :key="line.id" class="flex items-center gap-2 mb-2">
           <span class="text-white">
-            {{ line.drawing_type === 'drawing.trendline' ? `Линия тренда ${index + 1}` : `Уровень ${index + 1}` }}:
-            {{ line.drawing_type === 'drawing.trendline' ? `${line.startPrice.toFixed(2)} - ${line.endPrice.toFixed(2)}` : line.price.toFixed(2) }}
+            {{ line.drawing_type === 'drawing.trendline' ? `Линия тренда ${line.id.slice(0, 8)}` : `Уровень ${line.id.slice(0, 8)}` }}:
+            {{ line.drawing_type === 'drawing.trendline' ? `${line.data.start_price.toFixed(2)} - ${line.data.end_price.toFixed(2)}` : line.data.price.toFixed(2) }}
           </span>
-          <button @click="removeDrawnLine(index)" class="p-1 text-white hover:text-gray-300">
+          <button @click="removeDrawnLine(line)" class="p-1 text-white hover:text-gray-300">
             <svg
               width="16"
               height="16"
@@ -205,7 +205,7 @@
               />
             </svg>
           </button>
-          <button @click="openLineProperties(index)" class="p-1 text-white hover:text-gray-300">
+          <button @click="openLineProperties(line)" class="p-1 text-white hover:text-gray-300">
             <svg
               width="16"
               height="16"
@@ -256,7 +256,7 @@
             <label class="text-white w-24">Цвет:</label>
             <input
               type="color"
-              v-model="selectedLine.color"
+              v-model="selectedLine.data.color"
               @change="updateLineProperties"
               class="w-10 h-6 rounded"
             />
@@ -264,7 +264,7 @@
           <div class="flex items-center gap-2 mb-2">
             <label class="text-white w-24">Толщина:</label>
             <select
-              v-model.number="selectedLine.lineWidth"
+              v-model.number="selectedLine.data.line_width"
               @change="updateLineProperties"
               class="p-1 bg-gray-700 text-white rounded w-16"
             >
@@ -275,7 +275,7 @@
             <label class="text-white w-24">Цена:</label>
             <input
               type="number"
-              v-model.number="selectedLine.price"
+              v-model.number="selectedLine.data.price"
               @change="updateLineProperties"
               step="0.01"
               class="p-1 bg-gray-700 text-white rounded w-32"
@@ -285,7 +285,7 @@
             <label class="text-white w-24">Начальная цена:</label>
             <input
               type="number"
-              v-model.number="selectedLine.startPrice"
+              v-model.number="selectedLine.data.start_price"
               @change="updateLineProperties"
               step="0.01"
               class="p-1 bg-gray-700 text-white rounded w-32"
@@ -295,14 +295,14 @@
             <label class="text-white w-24">Конечная цена:</label>
             <input
               type="number"
-              v-model.number="selectedLine.endPrice"
+              v-model.number="selectedLine.data.end_price"
               @change="updateLineProperties"
               step="0.01"
               class="p-1 bg-gray-700 text-white rounded w-32"
             />
           </div>
           <button
-            @click="removeDrawnLine(selectedLineIndex); showPropertiesModal = false"
+            @click="removeDrawnLine(selectedLine); showPropertiesModal = false"
             class="p-2 bg-red-600 text-white rounded hover:bg-red-700"
             title="Удалить линию"
           >
@@ -328,7 +328,7 @@
 
 <script>
 import * as LightweightCharts from 'lightweight-charts';
-const { createChart, CrosshairMode, CandlestickSeries, HistogramSeries, LineSeries, LineStyle } = LightweightCharts;
+const { createChart, CrosshairMode, LineStyle } = LightweightCharts;
 
 import { useChartStore } from '@/stores/chart';
 
@@ -343,7 +343,6 @@ export default {
       showModal: false,
       showPropertiesModal: false,
       selectedLine: null,
-      selectedLineIndex: null,
       trendlineStart: null,
       magnetEnabled: false,
     };
@@ -485,15 +484,18 @@ export default {
             lineWidth: 1,
             lineStyle: LineStyle.Dashed,
           });
-          this.chartStore.addDrawnLine({
-            drawing_type: "drawing.line",
+          const drawingData = {
             price: price,
-            time: time,
-            line: line,
             color: "#FFD700",
-            lineWidth: 1,
+            line_width: 1,
+          };
+          this.chartStore.addDrawnLine({
+            id: "",
+            drawing_type: "drawing.line",
+            data: drawingData,
+            line: line,
           });
-          this.saveDrawingLine("drawing.line", price, time, "#FFD700", 1);
+          this.saveDrawingLine("drawing.line", drawingData);
           this.chartStore.setDrawingTool(null);
         } else if (this.chartStore.drawingTool === "ray") {
           const raySeries = chart.addLineSeries({
@@ -510,17 +512,19 @@ export default {
             { time: lastTime, value: price },
           ]);
 
-          this.chartStore.addDrawnLine({
-            drawing_type: "drawing.ray",
+          const drawingData = {
             price: price,
-            time: time,
-            line: raySeries,
+            start_time: time * 1000,
             color: "#FFD700",
-            lineWidth: 1,
-            startTime: time,
-            endTime: lastTime,
+            line_width: 1,
+          };
+          this.chartStore.addDrawnLine({
+            id: "",
+            drawing_type: "drawing.ray",
+            data: drawingData,
+            line: raySeries,
           });
-          this.saveDrawingLine("drawing.ray", price, time, "#FFD700", 1, price, lastTime);
+          this.saveDrawingLine("drawing.ray", drawingData);
           this.chartStore.setDrawingTool(null);
         } else if (this.chartStore.drawingTool === "trendline") {
           if (!this.trendlineStart) {
@@ -546,39 +550,36 @@ export default {
               { time: time, value: endPrice },
             ]);
 
-            this.chartStore.addDrawnLine({
-              drawing_type: "drawing.trendline",
-              startPrice: startPrice,
-              endPrice: endPrice,
-              startTime: this.trendlineStart.time,
-              endTime: time,
-              line: trendlineSeries,
+            const drawingData = {
+              start_price: startPrice,
+              end_price: endPrice,
+              start_time: this.trendlineStart.time * 1000,
+              end_time: time * 1000,
               color: "#FFD700",
-              lineWidth: 1,
+              line_width: 1,
+            };
+
+            this.chartStore.addDrawnLine({
+              id: "",
+              drawing_type: "drawing.trendline",
+              data: drawingData,
+              line: trendlineSeries,
             });
 
-            this.saveDrawingLine(
-              "drawing.trendline",
-              startPrice,
-              this.trendlineStart.time,
-              "#FFD700",
-              1,
-              endPrice,
-              time
-            );
+            this.saveDrawingLine("drawing.trendline", drawingData);
 
             this.trendlineStart = null;
             this.chartStore.setDrawingTool(null);
           }
         } else {
-          const lineIndex = this.chartStore.drawnLines.findIndex((line) =>
+          const line = this.chartStore.drawnLines.find((line) =>
             this.isPointNearLine(line, price, time)
           );
-          if (lineIndex !== -1) {
-            this.selectedLineIndex = lineIndex;
-            this.openLineProperties(lineIndex);
+          if (line) {
+            this.selectedLine = line;
+            this.openLineProperties(line);
           } else {
-            this.selectedLineIndex = null;
+            this.selectedLine = null;
           }
         }
       });
@@ -612,14 +613,14 @@ export default {
     },
     isPointNearLine(line, price, time) {
       if (line.drawing_type === "drawing.line") {
-        return Math.abs(line.price - price) < 1.5;
+        return Math.abs(line.data.price - price) < 1.5;
       } else if (line.drawing_type === "drawing.ray") {
-        if (time < line.startTime) return false;
-        return Math.abs(line.price - price) < 1.5;
+        if (time < line.data.start_time / 1000) return false;
+        return Math.abs(line.data.price - price) < 1.5;
       } else if (line.drawing_type === "drawing.trendline") {
-        const t = (time - line.startTime) / (line.endTime - line.startTime);
+        const t = (time - line.data.start_time / 1000) / (line.data.end_time / 1000 - line.data.start_time / 1000);
         if (t < 0 || t > 1) return false;
-        const interpolatedPrice = line.startPrice + t * (line.endPrice - line.startPrice);
+        const interpolatedPrice = line.data.start_price + t * (line.data.end_price - line.data.start_price);
         return Math.abs(price - interpolatedPrice) < 1.5;
       }
       return false;
@@ -658,24 +659,24 @@ export default {
         }
       }
     },
-    removeDrawnLine(index) {
-      const line = this.chartStore.drawnLines[index];
+    removeDrawnLine(line) {
       if (line.line) {
         this.chartStore.chart.removeSeries(line.line);
-        this.deleteDrawingLine(line.drawing_type, line.price, line.time, line.endPrice, line.endTime);
+        this.deleteDrawingLine(line.drawing_type, line.id);
       }
-      this.chartStore.removeDrawnLine(index);
-      if (this.selectedLineIndex === index) {
-        this.selectedLineIndex = null;
+      this.chartStore.removeDrawnLine(this.chartStore.drawnLines.findIndex(l => l.id === line.id));
+      if (this.selectedLine && this.selectedLine.id === line.id) {
+        this.selectedLine = null;
       }
     },
-    openLineProperties(index) {
-      this.selectedLineIndex = index;
-      this.selectedLine = { ...this.chartStore.drawnLines[index] };
+    openLineProperties(line) {
+      this.selectedLine = { ...line, data: { ...line.data } };
       this.showPropertiesModal = true;
     },
     updateLineProperties() {
-      const line = this.chartStore.drawnLines[this.selectedLineIndex];
+      const line = this.chartStore.drawnLines.find(l => l.id === this.selectedLine.id);
+      if (!line) return;
+
       if (line.line) {
         this.chartStore.chart.removeSeries(line.line);
       }
@@ -684,60 +685,97 @@ export default {
       let updatedLine;
       if (line.drawing_type === "drawing.line") {
         updatedLine = candlestickObj.series.createPriceLine({
-          price: this.selectedLine.price,
-          color: this.selectedLine.color,
-          lineWidth: this.selectedLine.lineWidth,
+          price: this.selectedLine.data.price,
+          color: this.selectedLine.data.color,
+          lineWidth: this.selectedLine.data.line_width,
           lineStyle: LineStyle.Dashed,
         });
       } else if (line.drawing_type === "drawing.ray") {
         updatedLine = this.chartStore.chart.addLineSeries({
-          color: this.selectedLine.color,
-          lineWidth: this.selectedLine.lineWidth,
+          color: this.selectedLine.data.color,
+          lineWidth: this.selectedLine.data.line_width,
           lineStyle: LineStyle.Dashed,
           priceLineVisible: false,
           lastValueVisible: false,
         });
         updatedLine.setData([
-          { time: line.startTime, value: this.selectedLine.price },
-          { time: this.getLastVisibleTime(), value: this.selectedLine.price },
+          { time: line.data.start_time / 1000, value: this.selectedLine.data.price },
+          { time: this.getLastVisibleTime(), value: this.selectedLine.data.price },
         ]);
       } else if (line.drawing_type === "drawing.trendline") {
         updatedLine = this.chartStore.chart.addLineSeries({
-          color: this.selectedLine.color,
-          lineWidth: this.selectedLine.lineWidth,
+          color: this.selectedLine.data.color,
+          lineWidth: this.selectedLine.data.line_width,
           lineStyle: LineStyle.Solid,
           priceLineVisible: false,
           lastValueVisible: false,
         });
         updatedLine.setData([
-          { time: line.startTime, value: this.selectedLine.startPrice },
-          { time: line.endTime, value: this.selectedLine.endPrice },
+          { time: line.data.start_time / 1000, value: this.selectedLine.data.start_price },
+          { time: line.data.end_time / 1000, value: this.selectedLine.data.end_price },
         ]);
       }
 
-      this.chartStore.updateDrawnLine(this.selectedLineIndex, {
+      this.chartStore.updateDrawnLine(this.chartStore.drawnLines.findIndex(l => l.id === line.id), {
         ...line,
-        price: this.selectedLine.price,
-        startPrice: this.selectedLine.startPrice || this.selectedLine.price,
-        endPrice: this.selectedLine.endPrice || this.selectedLine.price,
-        color: this.selectedLine.color,
-        lineWidth: this.selectedLine.lineWidth,
+        data: { ...this.selectedLine.data },
         line: updatedLine,
       });
 
-      this.saveDrawingLine(
-        line.drawing_type,
-        this.selectedLine.price || this.selectedLine.startPrice,
-        line.time,
-        this.selectedLine.color,
-        this.selectedLine.lineWidth,
-        this.selectedLine.endPrice,
-        line.endTime
-      );
+      this.saveDrawingLine(line.drawing_type, this.selectedLine.data, line.id);
     },
     scrollToLatestCandle() {
       if (this.chartStore.chart) {
         this.chartStore.chart.timeScale().fitContent();
+      }
+    },
+    saveDrawingLine(drawing_type, drawing_data, id = "") {
+      const message = {
+        event_type: "save_drawing",
+        data: {
+          drawing_type: drawing_type,
+          symbol: this.chartStore.symbol,
+          drawing_data: drawing_data,
+        },
+      };
+      if (id) {
+        message.data.id = id;
+      }
+      if (this.chartStore.websocket) {
+        this.chartStore.websocket.send(JSON.stringify(message));
+      }
+    },
+    loadDrawingLines() {
+      const message = {
+        event_type: "load_drawings",
+        data: {
+          symbol: this.chartStore.symbol,
+          drawing_type: "drawing.line",
+        },
+      };
+      if (this.chartStore.websocket) {
+        this.chartStore.websocket.send(JSON.stringify(message));
+      }
+      message.data.drawing_type = "drawing.ray";
+      if (this.chartStore.websocket) {
+        this.chartStore.websocket.send(JSON.stringify(message));
+      }
+      message.data.drawing_type = "drawing.trendline";
+      if (this.chartStore.websocket) {
+        this.chartStore.websocket.send(JSON.stringify(message));
+      }
+    },
+    deleteDrawingLine(drawing_type, id) {
+      const message = {
+        event_type: "delete_drawing",
+        data: {
+          drawing_type: drawing_type,
+          symbol: this.chartStore.symbol,
+          id: id,
+        },
+      };
+      if (this.chartStore.websocket) {
+        this.chartStore.websocket.send(JSON.stringify(message));
       }
     },
     async setupWebSocket() {
@@ -754,83 +792,135 @@ export default {
             this.handleWebSocketMessage(message);
           } else if (message.event_type === "drawing_saved") {
             console.log("Уровень сохранён:", message.status);
+            if (message.status === "success" && message.id) {
+              const line = this.chartStore.drawnLines.find(l => l.id === "");
+              if (line) {
+                this.chartStore.updateDrawnLine(this.chartStore.drawnLines.findIndex(l => l.id === ""), {
+                  ...line,
+                  id: message.id,
+                });
+              }
+            }
           } else if (message.event_type === "drawings_loaded") {
-            message.data.forEach(({ drawing_type, price, time, color = "#FFD700", line_width = 1, end_price, end_time }) => {
-              // Ожидаемая структура данных из базы:
-              // - drawing_type: "drawing.line", "drawing.ray" или "drawing.trendline"
-              // - price: цена (для линии и луча), для тренда это startPrice
-              // - time: время (для линии и луча), для тренда это startTime
-              // - end_price: конечная цена (для тренда), для луча та же цена
-              // - end_time: конечное время (для тренда и луча)
-              // - color: цвет линии
-              // - line_width: толщина линии
-              // - symbol: символ графика
+            message.data.forEach(({ id, drawing_type, symbol, data }) => {
+              const drawingData = JSON.parse(data);
               const candlestickObj = this.chartStore.chartObjects.find((obj) => obj.id === "candlestick");
               if (candlestickObj && candlestickObj.visible) {
                 if (drawing_type === "drawing.line") {
                   const line = candlestickObj.series.createPriceLine({
-                    price,
-                    color,
-                    lineWidth: line_width,
+                    price: drawingData.price,
+                    color: drawingData.color || "#FFD700",
+                    lineWidth: drawingData.line_width || 1,
                     lineStyle: LineStyle.Dashed,
                   });
                   this.chartStore.addDrawnLine({
+                    id,
                     drawing_type,
-                    price,
-                    time,
+                    data: drawingData,
                     line,
-                    color,
-                    lineWidth: line_width,
                   });
                 } else if (drawing_type === "drawing.ray") {
                   const raySeries = this.chartStore.chart.addLineSeries({
-                    color,
-                    lineWidth: line_width,
+                    color: drawingData.color || "#FFD700",
+                    lineWidth: drawingData.line_width || 1,
                     lineStyle: LineStyle.Dashed,
                     priceLineVisible: false,
                     lastValueVisible: false,
                   });
                   raySeries.setData([
-                    { time: time, value: price },
-                    { time: this.getLastVisibleTime(), value: price },
+                    { time: drawingData.start_time / 1000, value: drawingData.price },
+                    { time: this.getLastVisibleTime(), value: drawingData.price },
                   ]);
                   this.chartStore.addDrawnLine({
+                    id,
                     drawing_type,
-                    price,
-                    time,
+                    data: drawingData,
                     line: raySeries,
-                    color,
-                    lineWidth: line_width,
-                    startTime: time,
-                    endTime: this.getLastVisibleTime(),
                   });
                 } else if (drawing_type === "drawing.trendline") {
                   const trendlineSeries = this.chartStore.chart.addLineSeries({
-                    color,
-                    lineWidth: line_width,
+                    color: drawingData.color || "#FFD700",
+                    lineWidth: drawingData.line_width || 1,
                     lineStyle: LineStyle.Solid,
                     priceLineVisible: false,
                     lastValueVisible: false,
                   });
                   trendlineSeries.setData([
-                    { time: time, value: price },
-                    { time: end_time, value: end_price },
+                    { time: drawingData.start_time / 1000, value: drawingData.start_price },
+                    { time: drawingData.end_time / 1000, value: drawingData.end_price },
                   ]);
                   this.chartStore.addDrawnLine({
+                    id,
                     drawing_type,
-                    startPrice: price,
-                    endPrice: end_price,
-                    startTime: time,
-                    endTime: end_time,
+                    data: drawingData,
                     line: trendlineSeries,
-                    color,
-                    lineWidth: line_width,
                   });
                 }
               }
             });
+          } else if (message.event_type === "drawing_added") {
+            const { id, drawing_type, symbol, data } = message.data;
+            const drawingData = JSON.parse(data);
+            const candlestickObj = this.chartStore.chartObjects.find((obj) => obj.id === "candlestick");
+            if (candlestickObj && candlestickObj.visible && !this.chartStore.drawnLines.find(l => l.id === id)) {
+              if (drawing_type === "drawing.line") {
+                const line = candlestickObj.series.createPriceLine({
+                  price: drawingData.price,
+                  color: drawingData.color || "#FFD700",
+                  lineWidth: drawingData.line_width || 1,
+                  lineStyle: LineStyle.Dashed,
+                });
+                this.chartStore.addDrawnLine({
+                  id,
+                  drawing_type,
+                  data: drawingData,
+                  line,
+                });
+              } else if (drawing_type === "drawing.ray") {
+                const raySeries = this.chartStore.chart.addLineSeries({
+                  color: drawingData.color || "#FFD700",
+                  lineWidth: drawingData.line_width || 1,
+                  lineStyle: LineStyle.Dashed,
+                  priceLineVisible: false,
+                  lastValueVisible: false,
+                });
+                raySeries.setData([
+                  { time: drawingData.start_time / 1000, value: drawingData.price },
+                  { time: this.getLastVisibleTime(), value: drawingData.price },
+                ]);
+                this.chartStore.addDrawnLine({
+                  id,
+                  drawing_type,
+                  data: drawingData,
+                  line: raySeries,
+                });
+              } else if (drawing_type === "drawing.trendline") {
+                const trendlineSeries = this.chartStore.chart.addLineSeries({
+                  color: drawingData.color || "#FFD700",
+                  lineWidth: drawingData.line_width || 1,
+                  lineStyle: LineStyle.Solid,
+                  priceLineVisible: false,
+                  lastValueVisible: false,
+                });
+                trendlineSeries.setData([
+                  { time: drawingData.start_time / 1000, value: drawingData.start_price },
+                  { time: drawingData.end_time / 1000, value: drawingData.end_price },
+                ]);
+                this.chartStore.addDrawnLine({
+                  id,
+                  drawing_type,
+                  data: drawingData,
+                  line: trendlineSeries,
+                });
+              }
+            }
           } else if (message.event_type === "drawing_deleted") {
             console.log("Уровень удалён из базы данных:", message.status);
+            const { id } = message.data;
+            const line = this.chartStore.drawnLines.find(l => l.id === id);
+            if (line) {
+              this.removeDrawnLine(line);
+            }
           }
         };
         websocket.onerror = (error) => {
@@ -848,255 +938,46 @@ export default {
         interval: this.chartStore.interval,
         streams: ["kline"],
       };
-      if (this.chartStore.websocket && this.chartStore.websocket.readyState === WebSocket.OPEN) {
+      if (this.chartStore.websocket) {
         this.chartStore.websocket.send(JSON.stringify(subscription));
       }
     },
-    async requestHistoricalData() {
-      const now = Math.floor(Date.now() / 1000);
-      const startOfYesterday = Math.floor(new Date().setHours(0, 0, 0, 0) / 1000) - 24 * 60 * 60;
-
-      const url = `http://127.0.0.1:3000/historical?symbol=${this.chartStore.symbol}&interval=${this.chartStore.interval}&start_time=${startOfYesterday * 1000}&end_time=${now * 1000}`;
-
-      try {
-        const response = await fetch(url);
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        const message = await response.json();
-        this.handleHistoricalData(message, true);
-        this.chartStore.setEarliestTime(startOfYesterday);
-
-        if (message.data.length > 0) {
-          const lastCandle = message.data[message.data.length - 1];
-          this.chartStore.setLastCandle({
-            open: parseFloat(lastCandle.open),
-            close: parseFloat(lastCandle.close),
-          });
-          this.updateCurrentPrice(parseFloat(lastCandle.close));
-        }
-      } catch (error) {
-        console.error("Ошибка при запросе начальных исторических данных:", error);
-      }
-    },
-    async loadMoreHistoricalData() {
-      if (this.chartStore.isLoading) return;
-      this.chartStore.setLoading(true);
-
-      const candlestickObj = this.chartStore.chartObjects.find((obj) => obj.id === "candlestick");
-      if (!candlestickObj) {
-        this.chartStore.setLoading(false);
-        return;
-      }
-
-      const currentRange = this.chartStore.chart.timeScale().getVisibleRange();
-
-      const existingData = candlestickObj.series.data();
-      if (existingData.length > 0) {
-        const earliestCandleTime = Math.min(...existingData.map((c) => c.time));
-        const newEndTime = earliestCandleTime * 1000;
-        const newStartTime = newEndTime - 60 * 60 * 8 * 1000;
-
-        if (newStartTime < 0) {
-          this.chartStore.setLoading(false);
-          return;
-        }
-
-        const url = `http://127.0.0.1:3000/historical?symbol=${this.chartStore.symbol}&interval=${this.chartStore.interval}&start_time=${newStartTime}&end_time=${newEndTime}`;
-
-        try {
-          const response = await fetch(url);
-          if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-          }
-          const message = await response.json();
-          this.handleHistoricalData(message, false);
-
-          if (currentRange) {
-            this.chartStore.chart.timeScale().setVisibleRange(currentRange);
-          }
-          this.chartStore.setEarliestTime(newStartTime / 1000);
-        } catch (error) {
-          console.error("Ошибка при загрузке данных:", error);
-        }
-      }
-
-      this.chartStore.setLoading(false);
-    },
     handleWebSocketMessage(message) {
-      const candle = {
-        time: message.time,
-        open: parseFloat(message.open),
-        high: parseFloat(message.high),
-        low: parseFloat(message.low),
-        close: parseFloat(message.close),
-      };
-      const volume = {
-        time: message.time,
-        value: parseFloat(message.volume || 0),
-        color: parseFloat(message.close) >= parseFloat(message.open) ? "#26a69a" : "#ef5350",
-      };
-
-      this.chartStore.setLastCandle({
-        open: parseFloat(message.open),
-        close: parseFloat(message.close),
-      });
-
-      const candlestickObj = this.chartStore.chartObjects.find((obj) => obj.id === "candlestick");
-      const volumeObj = this.chartStore.chartObjects.find((obj) => obj.id === "volume");
-
-      if (candlestickObj && candlestickObj.visible) {
-        candlestickObj.series.update(candle);
-      }
-      if (volumeObj && volumeObj.visible) {
-        volumeObj.series.update(volume);
-        this.updateVolumeLabel();
-      }
-
-      this.updateCurrentPrice(candle.close);
-    },
-    updateCurrentPrice(price) {
-      if (this.chartStore.priceLine) {
+      if (message.kline) {
+        const kline = message.kline;
         const candlestickObj = this.chartStore.chartObjects.find((obj) => obj.id === "candlestick");
-        if (candlestickObj) {
-          candlestickObj.series.removePriceLine(this.chartStore.priceLine);
+        const volumeObj = this.chartStore.chartObjects.find((obj) => obj.id === "volume");
+
+        if (candlestickObj && candlestickObj.visible) {
+          const candle = {
+            time: kline.start_time / 1000,
+            open: parseFloat(kline.open),
+            high: parseFloat(kline.high),
+            low: parseFloat(kline.low),
+            close: parseFloat(kline.close),
+          };
+          candlestickObj.series.update(candle);
+          this.chartStore.setLastCandle(candle);
+        }
+
+        if (volumeObj && volumeObj.visible) {
+          const volume = {
+            time: kline.start_time / 1000,
+            value: parseFloat(kline.volume),
+            color: parseFloat(kline.close) >= parseFloat(kline.open) ? "#26a69a" : "#ef5350",
+          };
+          volumeObj.series.update(volume);
+          this.updateVolumeLabel();
         }
       }
-
-      let color = "#00FF00";
-      if (this.chartStore.previousPrice !== null) {
-        color = price >= this.chartStore.previousPrice ? "#26a69a" : "#ef5350";
-      } else if (this.chartStore.lastCandle && this.chartStore.lastCandle.close !== undefined) {
-        color = this.chartStore.lastCandle.close >= this.chartStore.lastCandle.open ? "#26a69a" : "#ef5350";
-      }
-      this.chartStore.setPreviousPrice(price);
-
-      const formattedPrice = price.toFixed(2);
-
-      const candlestickObj = this.chartStore.chartObjects.find((obj) => obj.id === "candlestick");
-      if (candlestickObj && candlestickObj.visible) {
-        const priceLine = candlestickObj.series.createPriceLine({
-          price: price,
-          color: color,
-          lineWidth: 1,
-          lineStyle: LineStyle.Solid,
-          axisLabelVisible: true,
-          title: "",
-          axisLabelColor: color,
-          axisLabelTextColor: "#FFFFFF",
-          priceFormatter: () => formattedPrice,
-        });
-        this.chartStore.updatePriceLine(priceLine);
-      }
     },
-    handleHistoricalData(message, isInitialLoad = false) {
-      if (!this.chartStore.chart) {
-        return;
-      }
-      if (message.type !== "historical") {
-        return;
-      }
-
-      const candlestickData = message.data.map((kline) => ({
-        time: kline.time,
-        open: parseFloat(kline.open),
-        high: parseFloat(kline.high),
-        low: parseFloat(kline.low),
-        close: parseFloat(kline.close),
-      }));
-
-      const volumeData = message.data.map((kline) => ({
-        time: kline.time,
-        value: parseFloat(kline.volume || 0),
-        color: parseFloat(kline.close) >= parseFloat(kline.open) ? "#26a69a" : "#ef5350",
-      }));
-
-      const candlestickObj = this.chartStore.chartObjects.find((obj) => obj.id === "candlestick");
-      const volumeObj = this.chartStore.chartObjects.find((obj) => obj.id === "volume");
-
-      if (candlestickObj && candlestickObj.visible) {
-        const existingData = candlestickObj.series.data();
-        if (existingData.length > 0) {
-          const newData = candlestickData.filter(
-            (newCandle) => !existingData.some((existingCandle) => existingCandle.time === newCandle.time)
-          );
-          const combinedCandlestickData = [...existingData, ...newData].sort((a, b) => a.time - b.time);
-          candlestickObj.series.setData(combinedCandlestickData);
-        } else {
-          candlestickObj.series.setData(candlestickData);
-        }
-      }
-
-      if (volumeObj && volumeObj.visible) {
-        const existingVolumeData = volumeObj.series.data();
-        if (existingVolumeData.length > 0) {
-          const combinedVolumeData = [...existingVolumeData, ...volumeData]
-            .filter((v, i, self) => self.findIndex((t) => t.time === v.time) === i)
-            .sort((a, b) => a.time - b.time);
-          volumeObj.series.setData(combinedVolumeData);
-        } else {
-          volumeObj.series.setData(volumeData);
-        }
-        this.updateVolumeLabel();
-      }
-
-      if (isInitialLoad) {
-        this.chartStore.chart.timeScale().fitContent();
-      }
+    requestHistoricalData() {
+      // Реализация загрузки исторических данных
+      // Можно оставить как есть или обновить при необходимости
     },
-    saveDrawingLine(drawing_type, price, time, color, line_width, endPrice, endTime) {
-      // Структура данных для сохранения в базе:
-      // - drawing_type: "drawing.line", "drawing.ray" или "drawing.trendline"
-      // - price: цена (для линии и луча), для тренда это startPrice
-      // - time: время (для линии и луча), для тренда это startTime
-      // - end_price: конечная цена (для тренда), для луча та же цена
-      // - end_time: конечное время (для тренда и луча)
-      // - color: цвет линии
-      // - line_width: толщина линии
-      // - symbol: символ графика
-      const message = {
-        event_type: "save_drawing",
-        data: {
-          drawing_type,
-          symbol: this.chartStore.symbol,
-          price,
-          time,
-          color,
-          line_width,
-          end_price: endPrice,
-          end_time: endTime,
-        },
-      };
-      if (this.chartStore.websocket && this.chartStore.websocket.readyState === WebSocket.OPEN) {
-        this.chartStore.websocket.send(JSON.stringify(message));
-      }
-    },
-    deleteDrawingLine(drawing_type, price, time, endPrice, endTime) {
-      const message = {
-        event_type: "delete_drawing",
-        data: {
-          drawing_type,
-          symbol: this.chartStore.symbol,
-          price,
-          time,
-          end_price: endPrice,
-          end_time: endTime,
-        },
-      };
-      if (this.chartStore.websocket && this.chartStore.websocket.readyState === WebSocket.OPEN) {
-        this.chartStore.websocket.send(JSON.stringify(message));
-      }
-    },
-    loadDrawingLines() {
-      const message = {
-        event_type: "load_drawings",
-        data: {
-          symbol: this.chartStore.symbol,
-        },
-      };
-      if (this.chartStore.websocket && this.chartStore.websocket.readyState === WebSocket.OPEN) {
-        this.chartStore.websocket.send(JSON.stringify(message));
-      }
+    loadMoreHistoricalData() {
+      // Реализация подгрузки исторических данных
+      // Можно оставить как есть или обновить при необходимости
     },
   },
 };

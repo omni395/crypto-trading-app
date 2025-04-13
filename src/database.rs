@@ -6,7 +6,7 @@ use serde_json;
 pub fn save_drawing(con: &mut Connection, drawing: &Drawing) -> redis::RedisResult<()> {
     let serialized = serde_json::to_string(drawing)
         .map_err(|e| RedisError::from((ErrorKind::TypeError, "Serialization error", e.to_string())))?;
-    let key = format!("{}:{}:{}", drawing.drawing_type, drawing.symbol, drawing.time);
+    let key = format!("{}:{}:{}", drawing.drawing_type, drawing.symbol, drawing.id);
     con.set(&key, serialized)?;
     Ok(())
 }
@@ -26,17 +26,9 @@ pub fn load_drawings(con: &mut Connection, drawing_type: &str, symbol: &str) -> 
 }
 
 #[allow(deprecated)]
-pub fn delete_drawing(con: &mut Connection, drawing_type: &str, symbol: &str, price: f64, time: i64) -> redis::RedisResult<()> {
-    let key = format!("{}:{}:{}", drawing_type, symbol, time);
-    let exists: bool = con.exists(&key)?;
-    if exists {
-        let serialized: String = con.get(&key)?;
-        let drawing: Drawing = serde_json::from_str(&serialized)
-            .map_err(|e| RedisError::from((ErrorKind::TypeError, "Deserialization error", e.to_string())))?;
-        if (drawing.price - price).abs() < f64::EPSILON {
-            con.del(&key)?;
-        }
-    }
+pub fn delete_drawing(con: &mut Connection, drawing_type: &str, symbol: &str, id: &str) -> redis::RedisResult<()> {
+    let key = format!("{}:{}:{}", drawing_type, symbol, id);
+    con.del(&key)?;
     Ok(())
 }
 

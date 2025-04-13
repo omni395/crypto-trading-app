@@ -28,11 +28,17 @@ export const useChartStore = defineStore('chart', {
     addDrawnLine(line) {
       this.drawnLines.push(line);
     },
-    removeDrawnLine(index) {
-      this.drawnLines.splice(index, 1);
+    removeDrawnLine(id) {
+      this.drawnLines = this.drawnLines.filter(line => line.id !== id);
     },
-    updateDrawnLine(index, line) {
-      this.drawnLines[index] = line;
+    updateDrawnLine(id, line) {
+      const index = this.drawnLines.findIndex(l => l.id === id);
+      if (index !== -1) {
+        this.drawnLines[index] = line;
+      }
+    },
+    clearDrawnLines() {
+      this.drawnLines = [];
     },
     setDrawingTool(tool) {
       this.drawingTool = tool;

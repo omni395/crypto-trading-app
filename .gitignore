@@ -2,3 +2,6 @@
 /redis-data/dump.rdb
 /target
 .vs
+dump.rdb
+.rdb
+.db

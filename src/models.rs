@@ -47,12 +47,10 @@ pub struct DepthEvent {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Drawing {
-    pub drawing_type: String,  // Тип объекта (например, "drawing.line", "drawing.brush")
-    pub symbol: String,
-    pub price: f64,
-    pub time: i64,
-    pub color: String,
-    pub line_width: i32,
+    pub id: String,           // Уникальный идентификатор
+    pub drawing_type: String, // Тип объекта ("drawing.line", "drawing.ray", "drawing.trendline")
+    pub symbol: String,       // Символ криптовалюты
+    pub data: String,         // Данные в формате JSON
 }
 
 #[derive(Debug, Serialize, Deserialize)]

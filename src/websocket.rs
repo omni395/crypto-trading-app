@@ -3,6 +3,7 @@ use actix_web::{web, HttpRequest, HttpResponse};
 use actix_web_actors::ws;
 use serde_json::json;
 use std::sync::Arc;
+use uuid::Uuid;
 
 use crate::app_state::AppState;
 use crate::database;
@@ -91,7 +92,34 @@ impl actix::StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession 
                     match event_type {
                         "save_drawing" => {
                             println!("Получено сообщение save_drawing: {}", text);
-                            if let Ok(drawing) = serde_json::from_value::<Drawing>(value["data"].clone()) {
+                            if let Some(data) = value.get("data") {
+                                let drawing_type = data.get("drawing_type").and_then(|v| v.as_str()).unwrap_or("");
+                                let symbol = data.get("symbol").and_then(|v| v.as_str()).unwrap_or("");
+                                let drawing_data = data.get("drawing_data").ok_or_else(|| {
+                                    println!("Отсутствует drawing_data");
+                                    "Missing drawing_data"
+                                });
+                                if drawing_data.is_err() {
+                                    let addr = ctx.address();
+                                    addr.do_send(ClientMessage(json!({"event_type": "drawing_saved", "status": "error", "message": "Missing drawing_data"}).to_string()));
+                                    return;
+                                }
+                                // Проверяем, что drawing_data можно сериализовать в JSON
+                                let drawing_data_str = match serde_json::to_string(&drawing_data.unwrap()) {
+                                    Ok(s) => s,
+                                    Err(e) => {
+                                        println!("Ошибка сериализации drawing_data: {:?}", e);
+                                        let addr = ctx.address();
+                                        addr.do_send(ClientMessage(json!({"event_type": "drawing_saved", "status": "error", "message": "Invalid drawing_data format"}).to_string()));
+                                        return;
+                                    }
+                                };
+                                let mut drawing = Drawing {
+                                    id: Uuid::new_v4().to_string(),
+                                    drawing_type: drawing_type.to_string(),
+                                    symbol: symbol.to_string(),
+                                    data: drawing_data_str,
+                                };
                                 let mut redis_con = match self.app_state.redis_client.get_connection() {
                                     Ok(con) => con,
                                     Err(e) => {
@@ -108,7 +136,7 @@ impl actix::StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession 
                                     return;
                                 }
                                 println!("Drawing успешно сохранён: {:?}", drawing);
-                                addr.do_send(ClientMessage(json!({"event_type": "drawing_saved", "status": "success"}).to_string()));
+                                addr.do_send(ClientMessage(json!({"event_type": "drawing_saved", "status": "success", "id": drawing.id}).to_string()));
                                 // Рассылаем сообщение всем клиентам
                                 let app_state = self.app_state.clone();
                                 let message = json!({
@@ -128,7 +156,15 @@ impl actix::StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession 
                             if let Some(data) = value.get("data") {
                                 let symbol = data.get("symbol").and_then(|v| v.as_str()).unwrap_or("");
                                 let drawing_type = data.get("drawing_type").and_then(|v| v.as_str()).unwrap_or("drawing.line");
-                                let mut redis_con = self.app_state.redis_client.get_connection().unwrap();
+                                let mut redis_con = match self.app_state.redis_client.get_connection() {
+                                    Ok(con) => con,
+                                    Err(e) => {
+                                        println!("Ошибка подключения к Redis: {:?}", e);
+                                        let addr = ctx.address();
+                                        addr.do_send(ClientMessage(json!({"event_type": "drawings_loaded", "status": "error", "message": e.to_string()}).to_string()));
+                                        return;
+                                    }
+                                };
                                 let addr = ctx.address();
                                 match database::load_drawings(&mut redis_con, drawing_type, symbol) {
                                     Ok(lines) => addr.do_send(ClientMessage(json!({"event_type": "drawings_loaded", "data": lines}).to_string())),
@@ -140,15 +176,35 @@ impl actix::StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession 
                             if let Some(data) = value.get("data") {
                                 let symbol = data.get("symbol").and_then(|v| v.as_str()).unwrap_or("");
                                 let drawing_type = data.get("drawing_type").and_then(|v| v.as_str()).unwrap_or("drawing.line");
-                                let price = data.get("price").and_then(|v| v.as_f64()).unwrap_or(0.0);
-                                let time = data.get("time").and_then(|v| v.as_i64()).unwrap_or(0);
-                                let mut redis_con = self.app_state.redis_client.get_connection().unwrap();
+                                let id = data.get("id").and_then(|v| v.as_str()).unwrap_or("");
+                                let mut redis_con = match self.app_state.redis_client.get_connection() {
+                                    Ok(con) => con,
+                                    Err(e) => {
+                                        println!("Ошибка подключения к Redis: {:?}", e);
+                                        let addr = ctx.address();
+                                        addr.do_send(ClientMessage(json!({"event_type": "drawing_deleted", "status": "error", "message": e.to_string()}).to_string()));
+                                        return;
+                                    }
+                                };
                                 let addr = ctx.address();
-                                if let Err(e) = database::delete_drawing(&mut redis_con, drawing_type, symbol, price, time) {
+                                if let Err(e) = database::delete_drawing(&mut redis_con, drawing_type, symbol, id) {
                                     addr.do_send(ClientMessage(json!({"event_type": "drawing_deleted", "status": "error", "message": e.to_string()}).to_string()));
                                     return;
                                 }
                                 addr.do_send(ClientMessage(json!({"event_type": "drawing_deleted", "status": "success"}).to_string()));
+                                // Рассылаем сообщение об удалении всем клиентам
+                                let app_state = self.app_state.clone();
+                                let message = json!({
+                                    "event_type": "drawing_deleted",
+                                    "data": {
+                                        "drawing_type": drawing_type,
+                                        "symbol": symbol,
+                                        "id": id
+                                    }
+                                }).to_string();
+                                ctx.spawn(actix::fut::wrap_future(async move {
+                                    app_state.broadcast(&message).await;
+                                }));
                             }
                         }
                         "kline" => {
