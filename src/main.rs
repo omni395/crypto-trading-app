@@ -13,12 +13,12 @@ use binance::connect_to_binance;
 use routes::configure_websocket;
 
 #[actix_web::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     std::env::set_var("RUST_LOG", "info");
     env_logger::init();
 
     let redis_client = redis::Client::open("redis://redis:6379/")?;
-    let (redis_pool, _background) = redis::aio::MultiplexedConnection::new(&redis_client.connection_info().clone(), &redis_client).await?;
+    let redis_pool = redis_client.get_multiplexed_tokio_connection().await?;
     let app_state = web::Data::new(AppState::new(redis_pool));
 
     let app_state_clone = app_state.clone();
