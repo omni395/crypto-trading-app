@@ -59,6 +59,7 @@ pub fn save_historical_data(con: &mut Connection, symbol: &str, interval: &str, 
     Ok(())
 }
 
+#[allow(dead_code)]
 pub fn load_historical_data(con: &mut Connection, symbol: &str, interval: &str, start_time: i64, end_time: i64) -> redis::RedisResult<Vec<serde_json::Value>> {
     let keys: Vec<String> = con.keys(format!("historical:{}:{}:*", symbol, interval))?;
     let mut historical_data = Vec::new();

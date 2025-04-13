@@ -90,14 +90,38 @@ impl actix::StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession 
                     let event_type = value["event_type"].as_str().unwrap_or("");
                     match event_type {
                         "save_drawing" => {
+                            println!("Получено сообщение save_drawing: {}", text);
                             if let Ok(drawing) = serde_json::from_value::<Drawing>(value["data"].clone()) {
-                                let mut redis_con = self.app_state.redis_client.get_connection().unwrap();
+                                let mut redis_con = match self.app_state.redis_client.get_connection() {
+                                    Ok(con) => con,
+                                    Err(e) => {
+                                        println!("Ошибка подключения к Redis: {:?}", e);
+                                        let addr = ctx.address();
+                                        addr.do_send(ClientMessage(json!({"event_type": "drawing_saved", "status": "error", "message": e.to_string()}).to_string()));
+                                        return;
+                                    }
+                                };
                                 let addr = ctx.address();
                                 if let Err(e) = database::save_drawing(&mut redis_con, &drawing) {
+                                    println!("Ошибка сохранения drawing: {:?}", e);
                                     addr.do_send(ClientMessage(json!({"event_type": "drawing_saved", "status": "error", "message": e.to_string()}).to_string()));
                                     return;
                                 }
+                                println!("Drawing успешно сохранён: {:?}", drawing);
                                 addr.do_send(ClientMessage(json!({"event_type": "drawing_saved", "status": "success"}).to_string()));
+                                // Рассылаем сообщение всем клиентам
+                                let app_state = self.app_state.clone();
+                                let message = json!({
+                                    "event_type": "drawing_added",
+                                    "data": drawing
+                                }).to_string();
+                                ctx.spawn(actix::fut::wrap_future(async move {
+                                    app_state.broadcast(&message).await;
+                                }));
+                            } else {
+                                println!("Ошибка десериализации drawing: {:?}", value["data"]);
+                                let addr = ctx.address();
+                                addr.do_send(ClientMessage(json!({"event_type": "drawing_saved", "status": "error", "message": "Invalid drawing data"}).to_string()));
                             }
                         }
                         "load_drawings" => {
@@ -132,22 +156,6 @@ impl actix::StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession 
                                 Ok(msg) => msg,
                                 Err(_) => return,
                             };
-                            let mut redis_con = self.app_state.redis_client.get_connection().unwrap();
-                            if let Some(kline) = ws_message.kline {
-                                if let Err(e) = database::save_historical_data(
-                                    &mut redis_con,
-                                    &kline.symbol,
-                                    &kline.interval,
-                                    kline.start_time as i64,
-                                    &kline.open,
-                                    &kline.high,
-                                    &kline.low,
-                                    &kline.close,
-                                    &kline.volume,
-                                ) {
-                                    println!("Failed to save historical data: {:?}", e);
-                                }
-                            }
                             let app_state = self.app_state.clone();
                             ctx.spawn(actix::fut::wrap_future(async move {
                                 let clients = app_state.clients.lock().await;

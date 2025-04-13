@@ -3,8 +3,10 @@ use serde::{Deserialize, Serialize};
 #[derive(Deserialize, Debug)]
 pub struct KlineEvent {
     #[serde(rename = "E")]
+    #[allow(dead_code)]
     pub event_time: u64,
     #[serde(rename = "s")]
+    #[allow(dead_code)]
     pub symbol: String,
     pub k: Kline,
 }

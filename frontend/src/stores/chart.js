@@ -1,20 +1,19 @@
-// stores/chart.js
 import { defineStore } from 'pinia';
 
 export const useChartStore = defineStore('chart', {
   state: () => ({
     chart: null,
     websocket: null,
-    symbol: 'BTCUSDT',
-    interval: '1m',
     chartObjects: [],
     drawnLines: [],
     drawingTool: null,
-    isLoading: false,
-    earliestTime: null,
-    lastCandle: null,
-    previousPrice: null,
+    symbol: 'BTCUSDT',
+    interval: '1m',
     priceLine: null,
+    previousPrice: null,
+    lastCandle: null,
+    earliestTime: null,
+    isLoading: false,
   }),
   actions: {
     setChart(chart) {
@@ -26,33 +25,38 @@ export const useChartStore = defineStore('chart', {
     addChartObject(object) {
       this.chartObjects.push(object);
     },
-    setDrawingTool(tool) {
-      this.drawingTool = tool;
-    },
     addDrawnLine(line) {
       this.drawnLines.push(line);
     },
     removeDrawnLine(index) {
       this.drawnLines.splice(index, 1);
     },
-    // Добавляем новый метод для обновления линии
-    updateDrawnLine(index, updatedLine) {
-      this.drawnLines[index] = updatedLine;
+    updateDrawnLine(index, line) {
+      this.drawnLines[index] = line;
     },
-    setLoading(loading) {
-      this.isLoading = loading;
+    setDrawingTool(tool) {
+      this.drawingTool = tool;
     },
-    setEarliestTime(time) {
-      this.earliestTime = time;
-    },
-    setLastCandle(candle) {
-      this.lastCandle = candle;
+    updatePriceLine(priceLine) {
+      this.priceLine = priceLine;
     },
     setPreviousPrice(price) {
       this.previousPrice = price;
     },
-    updatePriceLine(priceLine) {
-      this.priceLine = priceLine;
+    setLastCandle(candle) {
+      this.lastCandle = candle;
+    },
+    setEarliestTime(time) {
+      this.earliestTime = time;
+    },
+    setLoading(loading) {
+      this.isLoading = loading;
+    },
+    toggleObjectVisibility(id) {
+      const obj = this.chartObjects.find((o) => o.id === id);
+      if (obj) {
+        obj.visible = !obj.visible;
+      }
     },
   },
 });

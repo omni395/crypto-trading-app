@@ -180,25 +180,36 @@ pub async fn start_binance_ws(state: web::Data<AppState>) {
                             if let Ok(data) = serde_json::from_str::<KlineEvent>(&text) {
                                 let kline = data.k;
 
+                                let open = kline.open.parse::<f64>().unwrap_or(0.0);
+                                let high = kline.high.parse::<f64>().unwrap_or(0.0);
+                                let low = kline.low.parse::<f64>().unwrap_or(0.0);
+                                let close = kline.close.parse::<f64>().unwrap_or(0.0);
+                                let volume = kline.volume.parse::<f64>().unwrap_or(0.0);
+
                                 let mut redis_con = state.redis_client.get_connection().unwrap();
                                 crate::database::save_historical_data(
                                     &mut redis_con,
                                     &kline.symbol,
                                     &kline.interval,
                                     kline.start_time as i64,
-                                    &kline.open,
-                                    &kline.high,
-                                    &kline.low,
-                                    &kline.close,
-                                    &kline.volume,
+                                    &open.to_string(),
+                                    &high.to_string(),
+                                    &low.to_string(),
+                                    &close.to_string(),
+                                    &volume.to_string(),
                                 ).unwrap_or_else(|e| log::error!("Не удалось сохранить kline: {:?}", e));
 
-                                let ws_message = WebSocketMessage {
-                                    event_type: "kline".to_string(),
-                                    kline: Some(kline.clone()),
-                                };
+                                let kline_json = json!({
+                                    "event_type": "kline",
+                                    "time": kline.start_time / 1000,
+                                    "open": open,
+                                    "high": high,
+                                    "low": low,
+                                    "close": close,
+                                    "volume": volume,
+                                });
 
-                                let message = serde_json::to_string(&ws_message).unwrap();
+                                let message = kline_json.to_string();
                                 state.broadcast(&message).await;
                             }
                         }
@@ -256,81 +267,4 @@ pub async fn start_binance_depth_ws(state: web::Data<AppState>) {
         log::info!("Переподключение к Binance Depth WebSocket через 5 секунд...");
         tokio::time::sleep(std::time::Duration::from_secs(5)).await;
     }
-}
-
-const BASE_WS_URL: &str = "wss://stream.binance.com:9443/ws";
-
-pub async fn stream_kline_data(
-    symbol: &str,
-    interval: &str,
-    state: &web::Data<AppState>,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let stream = format!("{}@kline_{}", symbol.to_lowercase(), interval);
-    let url = format!("{}/{}", BASE_WS_URL, stream);
-    let (ws_stream, _) = connect_async(url).await?;
-    let (mut write, mut read) = ws_stream.split();
-
-    let (tx, mut rx) = mpsc::channel(100);
-
-    tokio::spawn(async move {
-        while let Some(message) = rx.recv().await {
-            if let Err(e) = write.send(Message::Text(message)).await {
-                eprintln!("Ошибка отправки сообщения в WebSocket: {:?}", e);
-                break;
-            }
-        }
-    });
-
-    let subscribe_message = json!({
-        "method": "SUBSCRIBE",
-        "params": [stream],
-        "id": 1
-    })
-    .to_string();
-
-    tx.send(subscribe_message).await?;
-
-    while let Some(message) = read.next().await {
-        match message {
-            Ok(Message::Text(text)) => {
-                if let Ok(kline_event) = serde_json::from_str::<KlineEvent>(&text) {
-                    let kline = kline_event.k;
-
-                    if kline.is_closed {
-                        let ws_message = WebSocketMessage {
-                            event_type: "kline".to_string(),
-                            kline: Some(kline.clone()),
-                        };
-
-                        let message_str = serde_json::to_string(&ws_message)?;
-                        state.broadcast(&message_str).await;
-
-                        let mut redis_con = state.redis_client.get_connection()?;
-                        crate::database::save_historical_data(
-                            &mut redis_con,
-                            &kline_event.symbol,
-                            &kline.interval,
-                            kline.start_time as i64,
-                            &kline.open,
-                            &kline.high,
-                            &kline.low,
-                            &kline.close,
-                            &kline.volume,
-                        )?;
-                    }
-                }
-            }
-            Ok(Message::Close(_)) => {
-                println!("WebSocket соединение закрыто");
-                break;
-            }
-            Err(e) => {
-                eprintln!("Ошибка получения сообщения из WebSocket: {:?}", e);
-                break;
-            }
-            _ => {}
-        }
-    }
-
-    Ok(())
 }

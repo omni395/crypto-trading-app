@@ -42,7 +42,3 @@ websocket.rs
 ws_index: Инициализация WebSocket-сессии.
 WsSession: Управление подключением клиента, отправка сообщений через send_message, добавление/удаление клиентов из списка в AppState.
 
-
-
-
-<button aria-label="Показать дерево объектов" data-name="showObjectsTree" id="drawing-toolbar-object-tree" type="button" class="button-KTgbfaP5 apply-common-tooltip common-tooltip-vertical accessible-KTgbfaP5" tabindex="-1" data-tooltip="Показать дерево объектов"><div class="bg-KTgbfaP5"><span class="icon-KTgbfaP5"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 28 28" width="28" height="28"><g fill="currentColor"><path fill-rule="nonzero" d="M14 18.634l-.307-.239-7.37-5.73-2.137-1.665 9.814-7.633 9.816 7.634-.509.394-1.639 1.269-7.667 5.969zm7.054-6.759l1.131-.876-8.184-6.366-8.186 6.367 1.123.875 7.063 5.491 7.054-5.492z"></path><path d="M7 14.5l-1 .57 8 6.43 8-6.5-1-.5-7 5.5z"></path><path d="M7 17.5l-1 .57 8 6.43 8-6.5-1-.5-7 5.5z"></path></g></svg></span></div></button>
