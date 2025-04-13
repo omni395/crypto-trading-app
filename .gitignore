@@ -5,3 +5,15 @@
 dump.rdb
 .rdb
 .db
+/node_modules
+/.idea
+/.vscode
+/.DS_Store
+/.gradle
+/.classpath
+/.project
+/.settings
+/.mvn
+/.mvnw
+/.mvnw.cmd
+/.git

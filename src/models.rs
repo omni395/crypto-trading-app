@@ -45,12 +45,12 @@ pub struct DepthEvent {
     pub asks: Vec<Vec<String>>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Drawing {
-    pub id: String,           // Уникальный идентификатор
-    pub drawing_type: String, // Тип объекта ("drawing.line", "drawing.ray", "drawing.trendline")
-    pub symbol: String,       // Символ криптовалюты
-    pub data: String,         // Данные в формате JSON
+    pub id: String,
+    pub drawing_type: String,
+    pub symbol: String,
+    pub data: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

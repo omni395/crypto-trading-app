@@ -1,15 +1,15 @@
 use serde_json::json;
-use futures_util::{SinkExt, StreamExt};
-use actix_web::{web, HttpResponse};
+use actix_web::web;
 use reqwest;
 use serde::Deserialize;
 use std::cmp::min;
-use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
-use tokio::sync::mpsc;
-use redis::Commands;
+use tokio_tungstenite::{tungstenite, WebSocketStream, MaybeTlsStream};
+use futures_util::stream::StreamExt; // Добавляем для next/try_next
+use tokio::net::TcpStream;
 
 use crate::app_state::AppState;
-use crate::models::{KlineEvent, DepthEvent, WebSocketMessage};
+use crate::database;
+use crate::models::{KlineEvent, DepthEvent};
 
 #[derive(Deserialize, Debug)]
 pub struct HistoricalRequest {
@@ -24,44 +24,13 @@ pub async fn connect_to_binance(state: web::Data<AppState>) {
     tokio::spawn(start_binance_depth_ws(state.clone()));
 }
 
-pub async fn get_historical_data(
-    query: web::Query<HistoricalRequest>,
-    state: web::Data<AppState>,
-) -> HttpResponse {
-    let request = HistoricalRequest {
-        symbol: query.symbol.clone(),
-        interval: query.interval.clone(),
-        start_time: query.start_time,
-        end_time: query.end_time,
-    };
-
-    match fetch_historical_data(state.clone(), request).await {
-        Ok(historical_data) => {
-            log::info!(
-                "Успешно возвращены исторические данные для {}: {} записей",
-                query.symbol,
-                historical_data.len()
-            );
-            HttpResponse::Ok().json(json!({
-                "type": "historical",
-                "data": historical_data
-            }))
-        }
-        Err(e) => {
-            log::error!("Ошибка при загрузке исторических данных: {:?}", e);
-            HttpResponse::InternalServerError().body(format!("Error: {:?}", e))
-        }
-    }
-}
-
-#[allow(deprecated)]
 pub async fn fetch_historical_data(
     state: web::Data<AppState>,
     request: HistoricalRequest,
 ) -> Result<Vec<serde_json::Value>, Box<dyn std::error::Error>> {
     let key = format!("historical:{}:{}", request.start_time, request.end_time);
-    let mut redis_con = state.redis_client.get_connection()?;
-    let cached_data: Option<String> = redis_con.get(&key).ok();
+    let mut redis_con = state.redis_pool.clone();
+    let cached_data: Option<String> = redis_con.get(&key).await?;
 
     if let Some(cached_data) = cached_data {
         let data: Vec<serde_json::Value> = serde_json::from_str(&cached_data)?;
@@ -90,7 +59,6 @@ pub async fn fetch_historical_data(
     const LIMIT: i64 = 1000; // Ограничение Binance API
     const INTERVAL_SECONDS: i64 = 60; // 1 минута в миллисекундах
 
-    // Разбиваем интервал на куски по 1000 свечей
     while current_start < request.end_time {
         let current_end = min(current_start + LIMIT * INTERVAL_SECONDS * 1000, request.end_time);
         let url = format!(
@@ -135,9 +103,9 @@ pub async fn fetch_historical_data(
             current_end
         );
 
+        let mut redis_con = state.redis_pool.clone();
         for kline_data in &historical_data {
-            let mut redis_con = state.redis_client.get_connection()?;
-            crate::database::save_historical_data(
+            database::save_historical_data(
                 &mut redis_con,
                 &symbol,
                 &request.interval,
@@ -147,14 +115,14 @@ pub async fn fetch_historical_data(
                 &kline_data["low"].to_string(),
                 &kline_data["close"].to_string(),
                 &kline_data["volume"].to_string(),
-            )?;
+            )
+            .await?;
         }
 
         all_historical_data.extend(historical_data);
         current_start = current_end;
     }
 
-    // Сортируем данные по времени (на всякий случай)
     all_historical_data.sort_by(|a, b| {
         let time_a = a["time"].as_i64().unwrap_or(0);
         let time_b = b["time"].as_i64().unwrap_or(0);
@@ -162,8 +130,8 @@ pub async fn fetch_historical_data(
     });
 
     let serialized_data = serde_json::to_string(&all_historical_data)?;
-    let mut redis_con = state.redis_client.get_connection()?;
-    redis_con.set_ex(&key, serialized_data, 3600)?;
+    let mut redis_con = state.redis_pool.clone();
+    redis_con.set_ex::<_, _, ()>(&key, serialized_data, 3600).await?;
 
     Ok(all_historical_data)
 }
@@ -174,9 +142,9 @@ pub async fn start_binance_ws(state: web::Data<AppState>) {
         match tokio_tungstenite::connect_async(ws_url).await {
             Ok((mut ws, _)) => {
                 log::info!("Подключено к Binance WebSocket: {}", ws_url);
-                while let Some(msg) = ws.next().await {
+                while let Some(msg) = ws.try_next().await? {
                     match msg {
-                        Ok(tokio_tungstenite::tungstenite::Message::Text(text)) => {
+                        tungstenite::Message::Text(text) => {
                             if let Ok(data) = serde_json::from_str::<KlineEvent>(&text) {
                                 let kline = data.k;
 
@@ -186,8 +154,8 @@ pub async fn start_binance_ws(state: web::Data<AppState>) {
                                 let close = kline.close.parse::<f64>().unwrap_or(0.0);
                                 let volume = kline.volume.parse::<f64>().unwrap_or(0.0);
 
-                                let mut redis_con = state.redis_client.get_connection().unwrap();
-                                crate::database::save_historical_data(
+                                let mut redis_con = state.redis_pool.clone();
+                                if let Err(e) = database::save_historical_data(
                                     &mut redis_con,
                                     &kline.symbol,
                                     &kline.interval,
@@ -197,7 +165,12 @@ pub async fn start_binance_ws(state: web::Data<AppState>) {
                                     &low.to_string(),
                                     &close.to_string(),
                                     &volume.to_string(),
-                                ).unwrap_or_else(|e| log::error!("Не удалось сохранить kline: {:?}", e));
+                                )
+                                .await
+                                {
+                                    log::error!("Не удалось сохранить kline: {:?}", e);
+                                    continue;
+                                }
 
                                 let kline_json = json!({
                                     "event_type": "kline",
@@ -213,11 +186,7 @@ pub async fn start_binance_ws(state: web::Data<AppState>) {
                                 state.broadcast(&message).await;
                             }
                         }
-                        Ok(_) => continue,
-                        Err(e) => {
-                            log::error!("Ошибка WebSocket (kline): {:?}", e);
-                            break;
-                        }
+                        _ => continue,
                     }
                 }
             }
@@ -236,9 +205,9 @@ pub async fn start_binance_depth_ws(state: web::Data<AppState>) {
         match tokio_tungstenite::connect_async(ws_url).await {
             Ok((mut ws, _)) => {
                 log::info!("Подключено к Binance Depth WebSocket: {}", ws_url);
-                while let Some(msg) = ws.next().await {
+                while let Some(msg) = ws.try_next().await? {
                     match msg {
-                        Ok(tokio_tungstenite::tungstenite::Message::Text(text)) => {
+                        tungstenite::Message::Text(text) => {
                             if let Ok(data) = serde_json::from_str::<DepthEvent>(&text) {
                                 let depth_json = json!({
                                     "event_type": "depth",
@@ -252,11 +221,7 @@ pub async fn start_binance_depth_ws(state: web::Data<AppState>) {
                                 state.broadcast(&message).await;
                             }
                         }
-                        Ok(_) => continue,
-                        Err(e) => {
-                            log::error!("Ошибка WebSocket (depth): {:?}", e);
-                            break;
-                        }
+                        _ => continue,
                     }
                 }
             }

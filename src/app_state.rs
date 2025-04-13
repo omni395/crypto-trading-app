@@ -1,18 +1,17 @@
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use crate::websocket::WsSession;
-use redis::Client;
 
 pub struct AppState {
     pub clients: Arc<Mutex<Vec<Arc<WsSession>>>>,
-    pub redis_client: Client,
+    pub redis_pool: redis::aio::MultiplexedConnection,
 }
 
 impl AppState {
-    pub fn new(redis_client: Client) -> Self {
+    pub fn new(redis_pool: redis::aio::MultiplexedConnection) -> Self {
         AppState {
             clients: Arc::new(Mutex::new(Vec::new())),
-            redis_client,
+            redis_pool,
         }
     }
 

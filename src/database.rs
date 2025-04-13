@@ -1,22 +1,24 @@
 use crate::models::Drawing;
-use redis::{Commands, Connection, RedisError, ErrorKind};
+use redis::{AsyncCommands, RedisError, ErrorKind};
 use serde_json;
 
-#[allow(deprecated)]
-pub fn save_drawing(con: &mut Connection, drawing: &Drawing) -> redis::RedisResult<()> {
+pub async fn save_drawing(mut con: redis::aio::MultiplexedConnection, drawing: &Drawing) -> redis::RedisResult<()> {
     let serialized = serde_json::to_string(drawing)
         .map_err(|e| RedisError::from((ErrorKind::TypeError, "Serialization error", e.to_string())))?;
-    let key = format!("{}:{}:{}", drawing.drawing_type, drawing.symbol, drawing.id);
-    con.set(&key, serialized)?;
+    let key = format!("drawing:{}:{}:{}", drawing.drawing_type, drawing.symbol, drawing.id);
+    con.set::<_, _, ()>(&key, serialized).await?;
     Ok(())
 }
 
-pub fn load_drawings(con: &mut Connection, drawing_type: &str, symbol: &str) -> redis::RedisResult<Vec<Drawing>> {
-    let keys: Vec<String> = con.keys(format!("{}:{}:*", drawing_type, symbol))?;
+pub async fn load_drawings(
+    mut con: redis::aio::MultiplexedConnection,
+    symbol: &str,
+) -> redis::RedisResult<Vec<Drawing>> {
+    let keys: Vec<String> = con.keys(format!("drawing:*:{}:*", symbol)).await?;
     let mut drawings = Vec::new();
 
     for key in keys {
-        let serialized: String = con.get(&key)?;
+        let serialized: String = con.get(&key).await?;
         let drawing: Drawing = serde_json::from_str(&serialized)
             .map_err(|e| RedisError::from((ErrorKind::TypeError, "Deserialization error", e.to_string())))?;
         drawings.push(drawing);
@@ -25,15 +27,28 @@ pub fn load_drawings(con: &mut Connection, drawing_type: &str, symbol: &str) -> 
     Ok(drawings)
 }
 
-#[allow(deprecated)]
-pub fn delete_drawing(con: &mut Connection, drawing_type: &str, symbol: &str, id: &str) -> redis::RedisResult<()> {
-    let key = format!("{}:{}:{}", drawing_type, symbol, id);
-    con.del(&key)?;
+pub async fn delete_drawing(
+    mut con: redis::aio::MultiplexedConnection,
+    drawing_type: &str,
+    symbol: &str,
+    id: &str,
+) -> redis::RedisResult<()> {
+    let key = format!("drawing:{}:{}:{}", drawing_type, symbol, id);
+    con.del::<_, ()>(&key).await?;
     Ok(())
 }
 
-#[allow(deprecated)]
-pub fn save_historical_data(con: &mut Connection, symbol: &str, interval: &str, time: i64, open: &str, high: &str, low: &str, close: &str, volume: &str) -> redis::RedisResult<()> {
+pub async fn save_historical_data(
+    mut con: redis::aio::MultiplexedConnection,
+    symbol: &str,
+    interval: &str,
+    time: i64,
+    open: &str,
+    high: &str,
+    low: &str,
+    close: &str,
+    volume: &str,
+) -> redis::RedisResult<()> {
     let key = format!("historical:{}:{}:{}", symbol, interval, time);
     let value = serde_json::json!({
         "symbol": symbol,
@@ -47,17 +62,22 @@ pub fn save_historical_data(con: &mut Connection, symbol: &str, interval: &str, 
     });
     let serialized = serde_json::to_string(&value)
         .map_err(|e| RedisError::from((ErrorKind::TypeError, "Serialization error", e.to_string())))?;
-    con.set(&key, serialized)?;
+    con.set::<_, _, ()>(&key, serialized).await?;
     Ok(())
 }
 
-#[allow(dead_code)]
-pub fn load_historical_data(con: &mut Connection, symbol: &str, interval: &str, start_time: i64, end_time: i64) -> redis::RedisResult<Vec<serde_json::Value>> {
-    let keys: Vec<String> = con.keys(format!("historical:{}:{}:*", symbol, interval))?;
+pub async fn load_historical_data(
+    mut con: redis::aio::MultiplexedConnection,
+    symbol: &str,
+    interval: &str,
+    start_time: i64,
+    end_time: i64,
+) -> redis::RedisResult<Vec<serde_json::Value>> {
+    let keys: Vec<String> = con.keys(format!("historical:{}:{}:*", symbol, interval)).await?;
     let mut historical_data = Vec::new();
 
     for key in keys {
-        let serialized: String = con.get(&key)?;
+        let serialized: String = con.get(&key).await?;
         let data: serde_json::Value = serde_json::from_str(&serialized)
             .map_err(|e| RedisError::from((ErrorKind::TypeError, "Deserialization error", e.to_string())))?;
         let time = data["time"].as_i64().unwrap_or(0);

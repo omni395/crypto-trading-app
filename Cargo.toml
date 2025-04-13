@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-actix-web = "4.10.2"  
+actix-web = "4.10.2"
 actix-web-actors = "4.3.0"
 actix = "0.13.5"
 tokio = { version = "1.40.0", features = ["full"] }
@@ -12,9 +12,10 @@ tokio-tungstenite = { version = "0.24.0", features = ["native-tls"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 reqwest = { version = "0.12", features = ["json"] }
-redis = { version = "0.25.4", features = ["aio", "tokio-comp"] }
+redis = { version = "0.25.4", features = ["aio", "tokio-comp", "connection-manager"] }
 log = "0.4"
 env_logger = "0.11"
 rand = "0.8"
 futures-util = "0.3"
 actix-cors = "0.6"
+uuid = { version = "1.10", features = ["v4", "serde"] }
