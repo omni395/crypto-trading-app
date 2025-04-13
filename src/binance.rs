@@ -3,9 +3,9 @@ use actix_web::web;
 use reqwest;
 use serde::Deserialize;
 use std::cmp::min;
-use tokio_tungstenite::{tungstenite, WebSocketStream, MaybeTlsStream};
-use futures_util::stream::StreamExt; // Добавляем для next/try_next
-use tokio::net::TcpStream;
+use tokio_tungstenite::tungstenite;
+use redis::AsyncCommands; // Добавляем для get, set_ex
+use futures_util::TryStreamExt; // Для try_next
 
 use crate::app_state::AppState;
 use crate::database;
@@ -106,7 +106,7 @@ pub async fn fetch_historical_data(
         let mut redis_con = state.redis_pool.clone();
         for kline_data in &historical_data {
             database::save_historical_data(
-                &mut redis_con,
+                redis_con.clone(),
                 &symbol,
                 &request.interval,
                 kline_data["time"].as_i64().unwrap(),
@@ -131,12 +131,12 @@ pub async fn fetch_historical_data(
 
     let serialized_data = serde_json::to_string(&all_historical_data)?;
     let mut redis_con = state.redis_pool.clone();
-    redis_con.set_ex::<_, _, ()>(&key, serialized_data, 3600).await?;
+    redis_con.set_ex(&key, serialized_data, 3600).await?;
 
     Ok(all_historical_data)
 }
 
-pub async fn start_binance_ws(state: web::Data<AppState>) {
+pub async fn start_binance_ws(state: web::Data<AppState>) -> Result<(), Box<dyn std::error::Error>> {
     let ws_url = "wss://stream.binance.com:9443/ws/btcusdt@kline_1m";
     loop {
         match tokio_tungstenite::connect_async(ws_url).await {
@@ -156,7 +156,7 @@ pub async fn start_binance_ws(state: web::Data<AppState>) {
 
                                 let mut redis_con = state.redis_pool.clone();
                                 if let Err(e) = database::save_historical_data(
-                                    &mut redis_con,
+                                    redis_con.clone(),
                                     &kline.symbol,
                                     &kline.interval,
                                     kline.start_time as i64,
@@ -197,9 +197,10 @@ pub async fn start_binance_ws(state: web::Data<AppState>) {
         log::info!("Переподключение к Binance WebSocket (kline) через 5 секунд...");
         tokio::time::sleep(std::time::Duration::from_secs(5)).await;
     }
+    Ok(())
 }
 
-pub async fn start_binance_depth_ws(state: web::Data<AppState>) {
+pub async fn start_binance_depth_ws(state: web::Data<AppState>) -> Result<(), Box<dyn std::error::Error>> {
     let ws_url = "wss://stream.binance.com:9443/ws/btcusdt@depth20@100ms";
     loop {
         match tokio_tungstenite::connect_async(ws_url).await {
@@ -232,4 +233,5 @@ pub async fn start_binance_depth_ws(state: web::Data<AppState>) {
         log::info!("Переподключение к Binance Depth WebSocket через 5 секунд...");
         tokio::time::sleep(std::time::Duration::from_secs(5)).await;
     }
+    Ok(())
 }

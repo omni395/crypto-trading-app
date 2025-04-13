@@ -100,7 +100,7 @@ impl actix::StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession 
                                 let addr = ctx.address();
                                 let drawing_clone = drawing.clone();
                                 ctx.spawn(actix::fut::wrap_future(async move {
-                                    let mut redis_con = app_state.redis_pool.clone();
+                                    let redis_con = app_state.redis_pool.clone();
                                     match database::save_drawing(redis_con, &drawing_clone).await {
                                         Ok(_) => {
                                             println!("Drawing успешно сохранён: {:?}", drawing_clone);
@@ -125,12 +125,13 @@ impl actix::StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession 
                             }
                         }
                         "load_drawings" => {
-                            if let Some(data) = value.get("data") {
-                                let symbol = data.get("symbol").and_then(|v| v.as_str()).unwrap_or("");
-                                let app_state = self.app_state.clone();
-                                let addr = ctx.address();
-                                ctx.spawn(actix::fut::wrap_future(async move {
-                                    let mut redis_con = app_state.redis_pool.clone();
+                            let value = value.clone(); // Клонируем value для асинхронного блока
+                            let app_state = self.app_state.clone();
+                            let addr = ctx.address();
+                            ctx.spawn(actix::fut::wrap_future(async move {
+                                if let Some(data) = value.get("data") {
+                                    let symbol = data.get("symbol").and_then(|v| v.as_str()).unwrap_or("");
+                                    let redis_con = app_state.redis_pool.clone();
                                     match database::load_drawings(redis_con, symbol).await {
                                         Ok(drawings) => {
                                             addr.do_send(ClientMessage(json!({"event_type": "drawings_loaded", "data": drawings}).to_string()));
@@ -140,23 +141,23 @@ impl actix::StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession 
                                             addr.do_send(ClientMessage(json!({"event_type": "drawings_loaded", "status": "error", "message": e.to_string()}).to_string()));
                                         }
                                     }
-                                }));
-                            }
+                                }
+                            }));
                         }
                         "delete_drawing" => {
-                            if let Some(data) = value.get("data") {
-                                let id = data.get("id").and_then(|v| v.as_str()).unwrap_or("");
-                                let symbol = data.get("symbol").and_then(|v| v.as_str()).unwrap_or("");
-                                let drawing_type = data.get("drawing_type").and_then(|v| v.as_str()).unwrap_or("");
-                                if Uuid::parse_str(id).is_err() {
-                                    let addr = ctx.address();
-                                    addr.do_send(ClientMessage(json!({"event_type": "drawing_deleted", "status": "error", "message": "Invalid UUID"}).to_string()));
-                                    return;
-                                }
-                                let app_state = self.app_state.clone();
-                                let addr = ctx.address();
-                                ctx.spawn(actix::fut::wrap_future(async move {
-                                    let mut redis_con = app_state.redis_pool.clone();
+                            let value = value.clone(); // Клонируем value для асинхронного блока
+                            let app_state = self.app_state.clone();
+                            let addr = ctx.address();
+                            ctx.spawn(actix::fut::wrap_future(async move {
+                                if let Some(data) = value.get("data") {
+                                    let id = data.get("id").and_then(|v| v.as_str()).unwrap_or("");
+                                    let symbol = data.get("symbol").and_then(|v| v.as_str()).unwrap_or("");
+                                    let drawing_type = data.get("drawing_type").and_then(|v| v.as_str()).unwrap_or("");
+                                    if Uuid::parse_str(id).is_err() {
+                                        addr.do_send(ClientMessage(json!({"event_type": "drawing_deleted", "status": "error", "message": "Invalid UUID"}).to_string()));
+                                        return;
+                                    }
+                                    let redis_con = app_state.redis_pool.clone();
                                     match database::delete_drawing(redis_con, drawing_type, symbol, id).await {
                                         Ok(_) => {
                                             addr.do_send(ClientMessage(json!({"event_type": "drawing_deleted", "status": "success"}).to_string()));
@@ -176,25 +177,26 @@ impl actix::StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession 
                                             addr.do_send(ClientMessage(json!({"event_type": "drawing_deleted", "status": "error", "message": e.to_string()}).to_string()));
                                         }
                                     }
-                                }));
-                            }
+                                }
+                            }));
                         }
                         "load_historical_data" => {
-                            if let Some(data) = value.get("data") {
-                                let symbol = data.get("symbol").and_then(|v| v.as_str()).unwrap_or("BTCUSDT");
-                                let interval = data.get("interval").and_then(|v| v.as_str()).unwrap_or("1m");
-                                let start_time = data.get("start_time").and_then(|v| v.as_i64()).unwrap_or(0);
-                                let end_time = data.get("end_time").and_then(|v| v.as_i64()).unwrap_or(0);
-                                let is_initial_load = data.get("is_initial_load").and_then(|v| v.as_bool()).unwrap_or(false);
-                                let request = binance::HistoricalRequest {
-                                    symbol: symbol.to_string(),
-                                    interval: interval.to_string(),
-                                    start_time,
-                                    end_time,
-                                };
-                                let app_state = self.app_state.clone();
-                                let addr = ctx.address();
-                                ctx.spawn(actix::fut::wrap_future(async move {
+                            let value = value.clone(); // Клонируем value для асинхронного блока
+                            let app_state = self.app_state.clone();
+                            let addr = ctx.address();
+                            ctx.spawn(actix::fut::wrap_future(async move {
+                                if let Some(data) = value.get("data") {
+                                    let symbol = data.get("symbol").and_then(|v| v.as_str()).unwrap_or("BTCUSDT");
+                                    let interval = data.get("interval").and_then(|v| v.as_str()).unwrap_or("1m");
+                                    let start_time = data.get("start_time").and_then(|v| v.as_i64()).unwrap_or(0);
+                                    let end_time = data.get("end_time").and_then(|v| v.as_i64()).unwrap_or(0);
+                                    let is_initial_load = data.get("is_initial_load").and_then(|v| v.as_bool()).unwrap_or(false);
+                                    let request = binance::HistoricalRequest {
+                                        symbol: symbol.to_string(),
+                                        interval: interval.to_string(),
+                                        start_time,
+                                        end_time,
+                                    };
                                     match binance::fetch_historical_data(app_state, request).await {
                                         Ok(historical_data) => {
                                             addr.do_send(ClientMessage(json!({
@@ -212,11 +214,11 @@ impl actix::StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession 
                                             }).to_string()));
                                         }
                                     }
-                                }));
-                            }
+                                }
+                            }));
                         }
                         "kline" => {
-                            let ws_message: WebSocketMessage = match serde_json::from_str(&text) {
+                            let _ws_message: WebSocketMessage = match serde_json::from_str(&text) {
                                 Ok(msg) => msg,
                                 Err(_) => return,
                             };
