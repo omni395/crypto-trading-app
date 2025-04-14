@@ -32,9 +32,6 @@ routes.rs
 Что делает: Определяет маршруты HTTP-сервера.
 За что отвечает:
 /ws: Маршрут для подключения WebSocket-клиентов.
-/historical: Эндпоинт для получения исторических данных свечей.
-/save-drawing (POST): Сохранение линий рисования в Redis.
-/load-drawings (GET): Загрузка линий рисования из Redis.
 configure_websocket: Регистрация всех маршрутов в приложении.
 websocket.rs
 Что делает: Реализует WebSocket-сервер для взаимодействия с клиентами.
@@ -42,3 +39,20 @@ websocket.rs
 ws_index: Инициализация WebSocket-сессии.
 WsSession: Управление подключением клиента, отправка сообщений через send_message, добавление/удаление клиентов из списка в AppState.
 
+
+
+
+пересмотри документацию и исправь ошибки.
+https://tradingview.github.io/lightweight-charts/docs
+https://tradingview.github.io/lightweight-charts/tutorials/how_to/price-and-volume
+https://tradingview.github.io/lightweight-charts/tutorials/vuejs/wrapper
+https://tradingview.github.io/lightweight-charts/docs/migrations/from-v4-to-v5
+
+чтобы не было вопросов версия:
+  "dependencies": {
+    "lightweight-charts": "^5.0.5",
+    "pinia": "^2.0.34",
+    "vue": "^3.2.13"
+  },
+
+показать файлы полностью. промежуточный код и свои мысли не показывать. показывать только окончательный вариант. структуру и логику не менять.
