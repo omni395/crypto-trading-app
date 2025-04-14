@@ -1,3 +1,4 @@
+// websocket.rs
 use actix::{ActorContext, AsyncContext};
 use actix_web::{web, HttpRequest, HttpResponse};
 use actix_web_actors::ws;
@@ -91,10 +92,16 @@ impl actix::StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession 
                 if let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) {
                     let event_type = value["event_type"].as_str().unwrap_or("");
                     match event_type {
+                        "subscribe" => {
+                            println!("Получена подписка: {:?}", value);
+                            let addr = ctx.address();
+                            addr.do_send(ClientMessage(
+                                json!({"event_type": "subscribed", "status": "success"}).to_string(),
+                            ));
+                        }
                         "save_drawing" => {
                             println!("Получено сообщение save_drawing: {}", text);
                             if let Ok(mut drawing) = serde_json::from_value::<Drawing>(value["data"].clone()) {
-                                // Генерируем новый UUID на сервере
                                 drawing.id = Uuid::new_v4().to_string();
                                 let app_state = self.app_state.clone();
                                 let addr = ctx.address();
@@ -104,28 +111,37 @@ impl actix::StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession 
                                     match database::save_drawing(redis_con, &drawing_clone).await {
                                         Ok(_) => {
                                             println!("Drawing успешно сохранён: {:?}", drawing_clone);
-                                            addr.do_send(ClientMessage(json!({"event_type": "drawing_saved", "status": "success", "id": drawing_clone.id}).to_string()));
-                                            // Рассылаем сообщение всем клиентам
+                                            addr.do_send(ClientMessage(
+                                                json!({"event_type": "drawing_saved", "status": "success", "id": drawing_clone.id})
+                                                    .to_string(),
+                                            ));
                                             let message = json!({
                                                 "event_type": "drawing_added",
                                                 "data": drawing_clone
-                                            }).to_string();
+                                            })
+                                            .to_string();
                                             app_state.broadcast(&message).await;
                                         }
                                         Err(e) => {
                                             println!("Ошибка сохранения drawing: {:?}", e);
-                                            addr.do_send(ClientMessage(json!({"event_type": "drawing_saved", "status": "error", "message": e.to_string()}).to_string()));
+                                            addr.do_send(ClientMessage(
+                                                json!({"event_type": "drawing_saved", "status": "error", "message": e.to_string()})
+                                                    .to_string(),
+                                            ));
                                         }
                                     }
                                 }));
                             } else {
                                 println!("Ошибка десериализации drawing: {:?}", value["data"]);
                                 let addr = ctx.address();
-                                addr.do_send(ClientMessage(json!({"event_type": "drawing_saved", "status": "error", "message": "Invalid drawing data"}).to_string()));
+                                addr.do_send(ClientMessage(
+                                    json!({"event_type": "drawing_saved", "status": "error", "message": "Invalid drawing data"})
+                                        .to_string(),
+                                ));
                             }
                         }
                         "load_drawings" => {
-                            let value = value.clone(); // Клонируем value для асинхронного блока
+                            let value = value.clone();
                             let app_state = self.app_state.clone();
                             let addr = ctx.address();
                             ctx.spawn(actix::fut::wrap_future(async move {
@@ -134,18 +150,23 @@ impl actix::StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession 
                                     let redis_con = app_state.redis_pool.clone();
                                     match database::load_drawings(redis_con, symbol).await {
                                         Ok(drawings) => {
-                                            addr.do_send(ClientMessage(json!({"event_type": "drawings_loaded", "data": drawings}).to_string()));
+                                            addr.do_send(ClientMessage(
+                                                json!({"event_type": "drawings_loaded", "data": drawings}).to_string(),
+                                            ));
                                         }
                                         Err(e) => {
                                             println!("Ошибка загрузки drawings: {:?}", e);
-                                            addr.do_send(ClientMessage(json!({"event_type": "drawings_loaded", "status": "error", "message": e.to_string()}).to_string()));
+                                            addr.do_send(ClientMessage(
+                                                json!({"event_type": "drawings_loaded", "status": "error", "message": e.to_string()})
+                                                    .to_string(),
+                                            ));
                                         }
                                     }
                                 }
                             }));
                         }
                         "delete_drawing" => {
-                            let value = value.clone(); // Клонируем value для асинхронного блока
+                            let value = value.clone();
                             let app_state = self.app_state.clone();
                             let addr = ctx.address();
                             ctx.spawn(actix::fut::wrap_future(async move {
@@ -154,14 +175,18 @@ impl actix::StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession 
                                     let symbol = data.get("symbol").and_then(|v| v.as_str()).unwrap_or("");
                                     let drawing_type = data.get("drawing_type").and_then(|v| v.as_str()).unwrap_or("");
                                     if Uuid::parse_str(id).is_err() {
-                                        addr.do_send(ClientMessage(json!({"event_type": "drawing_deleted", "status": "error", "message": "Invalid UUID"}).to_string()));
+                                        addr.do_send(ClientMessage(
+                                            json!({"event_type": "drawing_deleted", "status": "error", "message": "Invalid UUID"})
+                                                .to_string(),
+                                        ));
                                         return;
                                     }
                                     let redis_con = app_state.redis_pool.clone();
                                     match database::delete_drawing(redis_con, drawing_type, symbol, id).await {
                                         Ok(_) => {
-                                            addr.do_send(ClientMessage(json!({"event_type": "drawing_deleted", "status": "success"}).to_string()));
-                                            // Рассылаем сообщение всем клиентам
+                                            addr.do_send(ClientMessage(
+                                                json!({"event_type": "drawing_deleted", "status": "success"}).to_string(),
+                                            ));
                                             let message = json!({
                                                 "event_type": "drawing_deleted",
                                                 "data": {
@@ -169,19 +194,23 @@ impl actix::StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession 
                                                     "drawing_type": drawing_type,
                                                     "symbol": symbol
                                                 }
-                                            }).to_string();
+                                            })
+                                            .to_string();
                                             app_state.broadcast(&message).await;
                                         }
                                         Err(e) => {
                                             println!("Ошибка удаления drawing: {:?}", e);
-                                            addr.do_send(ClientMessage(json!({"event_type": "drawing_deleted", "status": "error", "message": e.to_string()}).to_string()));
+                                            addr.do_send(ClientMessage(
+                                                json!({"event_type": "drawing_deleted", "status": "error", "message": e.to_string()})
+                                                    .to_string(),
+                                            ));
                                         }
                                     }
                                 }
                             }));
                         }
                         "load_historical_data" => {
-                            let value = value.clone(); // Клонируем value для асинхронного блока
+                            let value = value.clone();
                             let app_state = self.app_state.clone();
                             let addr = ctx.address();
                             ctx.spawn(actix::fut::wrap_future(async move {
@@ -199,19 +228,25 @@ impl actix::StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession 
                                     };
                                     match binance::fetch_historical_data(app_state, request).await {
                                         Ok(historical_data) => {
-                                            addr.do_send(ClientMessage(json!({
-                                                "event_type": "historical_data",
-                                                "data": historical_data,
-                                                "is_initial_load": is_initial_load
-                                            }).to_string()));
+                                            addr.do_send(ClientMessage(
+                                                json!({
+                                                    "event_type": "historical_data",
+                                                    "data": historical_data,
+                                                    "is_initial_load": is_initial_load
+                                                })
+                                                .to_string(),
+                                            ));
                                         }
                                         Err(e) => {
                                             println!("Ошибка загрузки исторических данных: {:?}", e);
-                                            addr.do_send(ClientMessage(json!({
-                                                "event_type": "historical_data",
-                                                "status": "error",
-                                                "message": e.to_string()
-                                            }).to_string()));
+                                            addr.do_send(ClientMessage(
+                                                json!({
+                                                    "event_type": "historical_data",
+                                                    "status": "error",
+                                                    "message": e.to_string()
+                                                })
+                                                .to_string(),
+                                            ));
                                         }
                                     }
                                 }

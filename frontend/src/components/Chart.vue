@@ -327,7 +327,7 @@
 </template>
 
 <script>
-import { createChart, CrosshairMode, LineStyle } from 'lightweight-charts';
+import { createChart, CandlestickSeries, HistogramSeries, LineSeries, CrosshairMode, LineStyle } from 'lightweight-charts';
 import { useChartStore } from '@/stores/chart';
 
 export default {
@@ -353,21 +353,21 @@ export default {
       this.requestHistoricalData();
       this.loadDrawingLines();
     } catch (error) {
-      console.error("Error in mounted hook:", error);
+      console.error("Ошибка в хуке mounted:", error);
     }
   },
   methods: {
     initChart() {
       const chartContainer = this.$refs.chartContainer;
       if (!chartContainer) {
-        console.error("Chart container not found");
+        console.error("Контейнер графика не найден");
         return;
       }
 
       const width = chartContainer.clientWidth || window.innerWidth;
       const height = chartContainer.clientHeight || 600;
-      if (width <= 0 || height <= 0) {
-        console.error("Chart container has invalid dimensions:", { width, height });
+      if (width === 0 || height === 0) {
+        console.error("Недопустимые размеры контейнера:", { width, height });
         return;
       }
 
@@ -384,8 +384,12 @@ export default {
         },
         crosshair: {
           mode: CrosshairMode.Normal,
-          vertLine: { labelVisible: false },
-          horzLine: { labelVisible: false },
+          vertLine: {
+            labelVisible: false,
+          },
+          horzLine: {
+            labelVisible: false,
+          },
         },
         timeScale: {
           timeVisible: true,
@@ -398,15 +402,25 @@ export default {
 
       this.chartStore.setChart(chart);
 
-      const candlestickSeries = chart.addCandlestickSeries({
-        upColor: "#26a69a",
-        downColor: "#ef5350",
-        wickUpColor: "#26a69a",
-        wickDownColor: "#ef5350",
-      });
+      let candlestickSeries;
+      try {
+        candlestickSeries = chart.addSeries(CandlestickSeries, {
+          upColor: "#26a69a",
+          downColor: "#ef5350",
+          wickUpColor: "#26a69a",
+          wickDownColor: "#ef5350",
+        });
+        console.log("Серия свечей добавлена:", candlestickSeries);
+      } catch (error) {
+        console.error("Ошибка при добавлении серии свечей:", error);
+        return;
+      }
 
       candlestickSeries.priceScale().applyOptions({
-        scaleMargins: { top: 0.1, bottom: 0.4 },
+        scaleMargins: {
+          top: 0.1,
+          bottom: 0.4,
+        },
       });
 
       this.chartStore.addChartObject({
@@ -417,15 +431,25 @@ export default {
         settings: { upColor: "#26a69a", downColor: "#ef5350" },
       });
 
-      const volumeSeries = chart.addHistogramSeries({
-        color: "#26a69a",
-        priceFormat: { type: "volume" },
-        priceScaleId: "",
-        lastValueVisible: true,
-      });
+      let volumeSeries;
+      try {
+        volumeSeries = chart.addSeries(HistogramSeries, {
+          color: "#26a69a",
+          priceFormat: { type: "volume" },
+          priceScaleId: "",
+          lastValueVisible: true,
+        });
+        console.log("Серия объёмов добавлена:", volumeSeries);
+      } catch (error) {
+        console.error("Ошибка при добавлении серии объёмов:", error);
+        return;
+      }
 
       volumeSeries.priceScale().applyOptions({
-        scaleMargins: { top: 0.7, bottom: 0 },
+        scaleMargins: {
+          top: 0.7,
+          bottom: 0,
+        },
       });
 
       this.chartStore.addChartObject({
@@ -480,18 +504,24 @@ export default {
           this.saveDrawingLine("drawing.line", { price, color: "#FFD700", line_width: 1 });
           this.chartStore.setDrawingTool(null);
         } else if (this.chartStore.drawingTool === "ray") {
-          const raySeries = chart.addLineSeries({
-            color: "#FFD700",
-            lineWidth: 1,
-            lineStyle: LineStyle.Dashed,
-            priceLineVisible: false,
-            lastValueVisible: false,
-          });
+          let raySeries;
+          try {
+            raySeries = chart.addSeries(LineSeries, {
+              color: "#FFD700",
+              lineWidth: 1,
+              lineStyle: LineStyle.Dashed,
+              priceLineVisible: false,
+              lastValueVisible: false,
+            });
+            console.log("Серия линий для луча добавлена:", raySeries);
+          } catch (error) {
+            console.error("Ошибка при добавлении линии для луча:", error);
+            return;
+          }
 
-          const lastTime = this.getLastVisibleTime();
           raySeries.setData([
             { time, value: price },
-            { time: lastTime, value: price },
+            { time: this.getLastVisibleTime(), value: price },
           ]);
 
           this.chartStore.addDrawnLine({
@@ -513,13 +543,20 @@ export default {
               endPrice = this.getMagnetPrice(candlestickObj.series, endPrice, time);
             }
 
-            const trendlineSeries = chart.addLineSeries({
-              color: "#FFD700",
-              lineWidth: 1,
-              lineStyle: LineStyle.Solid,
-              priceLineVisible: false,
-              lastValueVisible: false,
-            });
+            let trendlineSeries;
+            try {
+              trendlineSeries = chart.addSeries(LineSeries, {
+                color: "#FFD700",
+                lineWidth: 1,
+                lineStyle: LineStyle.Solid,
+                priceLineVisible: false,
+                lastValueVisible: false,
+              });
+              console.log("Серия линий для тренда добавлена:", trendlineSeries);
+            } catch (error) {
+              console.error("Ошибка при добавлении линии для тренда:", error);
+              return;
+            }
 
             trendlineSeries.setData([
               { time: this.trendlineStart.time, value: startPrice },
@@ -567,7 +604,7 @@ export default {
     },
     getMagnetPrice(series, price, clickTime) {
       const data = series.data();
-      if (!data || data.length === 0) return price;
+      if (data.length === 0) return price;
 
       const nearestCandle = data.reduce((closest, candle) => {
         const timeDiff = Math.abs(candle.time - clickTime);
@@ -580,17 +617,17 @@ export default {
         nearestCandle.high,
         nearestCandle.low,
         nearestCandle.close,
-      ].filter(p => p !== undefined && p !== null);
-      
-      if (prices.length === 0) return price;
-
+      ];
       return prices.reduce((closestPrice, p) => {
         return Math.abs(p - price) < Math.abs(closestPrice - price) ? p : closestPrice;
       }, prices[0]);
     },
     getLastVisibleTime() {
-      const visibleRange = this.chartStore.chart?.timeScale().getVisibleRange();
-      return visibleRange ? visibleRange.to : Math.floor(Date.now() / 1000);
+      const visibleRange = this.chartStore.chart.timeScale().getVisibleRange();
+      if (!visibleRange) {
+        return Math.floor(Date.now() / 1000);
+      }
+      return visibleRange.to;
     },
     isPointNearLine(line, price, time) {
       const data = line.data;
@@ -620,34 +657,43 @@ export default {
     toggleVisibility(obj) {
       this.chartStore.toggleObjectVisibility(obj.id);
       const updatedObj = this.chartStore.chartObjects.find((o) => o.id === obj.id);
-      if (updatedObj?.series) {
-        updatedObj.series.applyOptions({ visible: updatedObj.visible });
-      }
+      updatedObj.series.applyOptions({ visible: updatedObj.visible });
       if (updatedObj.id === "volume" && updatedObj.visible) {
         this.updateVolumeLabel();
       }
     },
     updateVolumeLabel() {
       const volumeObj = this.chartStore.chartObjects.find((obj) => obj.id === "volume");
-      if (volumeObj && volumeObj.visible && volumeObj.series) {
+      if (volumeObj && volumeObj.visible) {
         const volumeData = volumeObj.series.data();
         if (volumeData.length > 0) {
           const lastVolume = volumeData[volumeData.length - 1];
-          const color = lastVolume.color || (this.chartStore.lastCandle?.close >= this.chartStore.lastCandle?.open ? "#26a69a" : "#ef5350");
+          const color = lastVolume.color || (this.chartStore.lastCandle.close >= this.chartStore.lastCandle.open ? "#26a69a" : "#ef5350");
           volumeObj.series.applyOptions({
             lastValueVisible: true,
             priceLineVisible: false,
             lastPriceAnimation: 0,
-            color,
+            color: color,
           });
         }
       }
     },
     removeDrawnLine(id) {
       const line = this.chartStore.drawnLines.find((l) => l.id === id);
-      if (line?.line) {
-        this.chartStore.chart?.removeSeries(line.line);
-        this.deleteDrawingLine(line.id, line.drawing_type, line.symbol);
+      if (line && line.line) {
+        try {
+          if (line.drawing_type === "drawing.line") {
+            const candlestickObj = this.chartStore.chartObjects.find((obj) => obj.id === "candlestick");
+            if (candlestickObj) {
+              candlestickObj.series.removePriceLine(line.line);
+            }
+          } else {
+            this.chartStore.chart.removeSeries(line.line);
+          }
+          this.deleteDrawingLine(line.id, line.drawing_type, line.symbol);
+        } catch (error) {
+          console.error("Ошибка при удалении линии:", error);
+        }
       }
       this.chartStore.removeDrawnLine(id);
       if (this.selectedLineIndex === id) {
@@ -661,57 +707,78 @@ export default {
     },
     updateLineProperties() {
       const line = this.chartStore.drawnLines.find((l) => l.id === this.selectedLineIndex);
-      if (!line || !line.line) return;
-
-      this.chartStore.chart?.removeSeries(line.line);
+      if (line && line.line) {
+        try {
+          if (line.drawing_type === "drawing.line") {
+            const candlestickObj = this.chartStore.chartObjects.find((obj) => obj.id === "candlestick");
+            if (candlestickObj) {
+              candlestickObj.series.removePriceLine(line.line);
+            }
+          } else {
+            this.chartStore.chart.removeSeries(line.line);
+          }
+        } catch (error) {
+          console.error("Ошибка при удалении старой линии:", error);
+        }
+      }
 
       const candlestickObj = this.chartStore.chartObjects.find((obj) => obj.id === "candlestick");
       let updatedLine;
       if (line.drawing_type === "drawing.line") {
-        updatedLine = candlestickObj?.series.createPriceLine({
-          price: this.selectedLine.data.price,
-          color: this.selectedLine.data.color,
-          lineWidth: this.selectedLine.data.line_width,
-          lineStyle: LineStyle.Dashed,
-        });
+        try {
+          updatedLine = candlestickObj.series.createPriceLine({
+            price: this.selectedLine.data.price,
+            color: this.selectedLine.data.color,
+            lineWidth: this.selectedLine.data.line_width,
+            lineStyle: LineStyle.Dashed,
+          });
+        } catch (error) {
+          console.error("Ошибка при создании линии уровня:", error);
+          return;
+        }
       } else if (line.drawing_type === "drawing.ray") {
-        updatedLine = this.chartStore.chart?.addLineSeries({
-          color: this.selectedLine.data.color,
-          lineWidth: this.selectedLine.data.line_width,
-          lineStyle: LineStyle.Dashed,
-          priceLineVisible: false,
-          lastValueVisible: false,
-        });
-        if (updatedLine) {
+        try {
+          updatedLine = this.chartStore.chart.addSeries(LineSeries, {
+            color: this.selectedLine.data.color,
+            lineWidth: this.selectedLine.data.line_width,
+            lineStyle: LineStyle.Dashed,
+            priceLineVisible: false,
+            lastValueVisible: false,
+          });
           updatedLine.setData([
             { time: line.data.start_time, value: this.selectedLine.data.price },
             { time: this.getLastVisibleTime(), value: this.selectedLine.data.price },
           ]);
+        } catch (error) {
+          console.error("Ошибка при создании линии луча:", error);
+          return;
         }
       } else if (line.drawing_type === "drawing.trendline") {
-        updatedLine = this.chartStore.chart?.addLineSeries({
-          color: this.selectedLine.data.color,
-          lineWidth: this.selectedLine.data.line_width,
-          lineStyle: LineStyle.Solid,
-          priceLineVisible: false,
-          lastValueVisible: false,
-        });
-        if (updatedLine) {
+        try {
+          updatedLine = this.chartStore.chart.addSeries(LineSeries, {
+            color: this.selectedLine.data.color,
+            lineWidth: this.selectedLine.data.line_width,
+            lineStyle: LineStyle.Solid,
+            priceLineVisible: false,
+            lastValueVisible: false,
+          });
           updatedLine.setData([
             { time: line.data.start_time, value: this.selectedLine.data.start_price },
             { time: line.data.end_time, value: this.selectedLine.data.end_price },
           ]);
+        } catch (error) {
+          console.error("Ошибка при создании линии тренда:", error);
+          return;
         }
       }
 
-      if (updatedLine) {
-        this.chartStore.updateDrawnLine(this.selectedLineIndex, {
-          ...line,
-          data: { ...this.selectedLine.data },
-          line: updatedLine,
-        });
-        this.saveDrawingLine(line.drawing_type, this.selectedLine.data);
-      }
+      this.chartStore.updateDrawnLine(this.selectedLineIndex, {
+        ...line,
+        data: { ...this.selectedLine.data },
+        line: updatedLine,
+      });
+
+      this.saveDrawingLine(line.drawing_type, this.selectedLine.data);
     },
     scrollToLatestCandle() {
       if (this.chartStore.chart) {
@@ -727,91 +794,24 @@ export default {
           resolve();
         };
         websocket.onmessage = (event) => {
-          try {
-            const message = JSON.parse(event.data);
-            switch (message.event_type) {
-              case "kline":
-                this.handleWebSocketMessage(message);
-                break;
-              case "historical_data":
-                this.handleHistoricalData(message, message.is_initial_load);
-                break;
-              case "drawings_loaded":
-                message.data.forEach(({ id, drawing_type, symbol, data }) => {
-                  try {
-                    const parsedData = JSON.parse(data);
-                    const candlestickObj = this.chartStore.chartObjects.find((obj) => obj.id === "candlestick");
-                    if (candlestickObj?.visible) {
-                      if (drawing_type === "drawing.line") {
-                        const line = candlestickObj.series.createPriceLine({
-                          price: parsedData.price,
-                          color: parsedData.color,
-                          lineWidth: parsedData.line_width,
-                          lineStyle: LineStyle.Dashed,
-                        });
-                        this.chartStore.addDrawnLine({
-                          id,
-                          drawing_type,
-                          symbol,
-                          data: parsedData,
-                          line,
-                        });
-                      } else if (drawing_type === "drawing.ray") {
-                        const raySeries = this.chartStore.chart?.addLineSeries({
-                          color: parsedData.color,
-                          lineWidth: parsedData.line_width,
-                          lineStyle: LineStyle.Dashed,
-                          priceLineVisible: false,
-                          lastValueVisible: false,
-                        });
-                        if (raySeries) {
-                          raySeries.setData([
-                            { time: parsedData.start_time, value: parsedData.price },
-                            { time: this.getLastVisibleTime(), value: parsedData.price },
-                          ]);
-                          this.chartStore.addDrawnLine({
-                            id,
-                            drawing_type,
-                            symbol,
-                            data: parsedData,
-                            line: raySeries,
-                          });
-                        }
-                      } else if (drawing_type === "drawing.trendline") {
-                        const trendlineSeries = this.chartStore.chart?.addLineSeries({
-                          color: parsedData.color,
-                          lineWidth: parsedData.line_width,
-                          lineStyle: LineStyle.Solid,
-                          priceLineVisible: false,
-                          lastValueVisible: false,
-                        });
-                        if (trendlineSeries) {
-                          trendlineSeries.setData([
-                            { time: parsedData.start_time, value: parsedData.start_price },
-                            { time: parsedData.end_time, value: parsedData.end_price },
-                          ]);
-                          this.chartStore.addDrawnLine({
-                            id,
-                            drawing_type,
-                            symbol,
-                            data: parsedData,
-                            line: trendlineSeries,
-                          });
-                        }
-                      }
-                    }
-                  } catch (e) {
-                    console.error("Error processing drawing:", e);
-                  }
-                });
-                break;
-              case "drawing_added":
-                try {
-                  const { id, drawing_type, symbol, data } = message.data;
-                  const parsedData = JSON.parse(data);
-                  const candlestickObj = this.chartStore.chartObjects.find((obj) => obj.id === "candlestick");
-                  if (candlestickObj?.visible) {
-                    if (drawing_type === "drawing.line") {
+          const message = JSON.parse(event.data);
+          switch (message.event_type) {
+            case "subscribed":
+              console.log("Подписка подтверждена:", message);
+              break;
+            case "kline":
+              this.handleWebSocketMessage(message);
+              break;
+            case "historical_data":
+              this.handleHistoricalData(message, message.is_initial_load);
+              break;
+            case "drawings_loaded":
+              message.data.forEach(({ id, drawing_type, symbol, data }) => {
+                const parsedData = JSON.parse(data);
+                const candlestickObj = this.chartStore.chartObjects.find((obj) => obj.id === "candlestick");
+                if (candlestickObj && candlestickObj.visible) {
+                  if (drawing_type === "drawing.line") {
+                    try {
                       const line = candlestickObj.series.createPriceLine({
                         price: parsedData.price,
                         color: parsedData.color,
@@ -825,86 +825,166 @@ export default {
                         data: parsedData,
                         line,
                       });
-                    } else if (drawing_type === "drawing.ray") {
-                      const raySeries = this.chartStore.chart?.addLineSeries({
+                    } catch (error) {
+                      console.error("Ошибка при загрузке линии уровня:", error);
+                    }
+                  } else if (drawing_type === "drawing.ray") {
+                    try {
+                      let raySeries = this.chartStore.chart.addSeries(LineSeries, {
                         color: parsedData.color,
                         lineWidth: parsedData.line_width,
                         lineStyle: LineStyle.Dashed,
                         priceLineVisible: false,
                         lastValueVisible: false,
                       });
-                      if (raySeries) {
-                        raySeries.setData([
-                          { time: parsedData.start_time, value: parsedData.price },
-                          { time: this.getLastVisibleTime(), value: parsedData.price },
-                        ]);
-                        this.chartStore.addDrawnLine({
-                          id,
-                          drawing_type,
-                          symbol,
-                          data: parsedData,
-                          line: raySeries,
-                        });
-                      }
-                    } else if (drawing_type === "drawing.trendline") {
-                      const trendlineSeries = this.chartStore.chart?.addLineSeries({
+                      raySeries.setData([
+                        { time: parsedData.start_time, value: parsedData.price },
+                        { time: this.getLastVisibleTime(), value: parsedData.price },
+                      ]);
+                      this.chartStore.addDrawnLine({
+                        id,
+                        drawing_type,
+                        symbol,
+                        data: parsedData,
+                        line: raySeries,
+                      });
+                    } catch (error) {
+                      console.error("Ошибка при загрузке линии луча:", error);
+                    }
+                  } else if (drawing_type === "drawing.trendline") {
+                    try {
+                      let trendlineSeries = this.chartStore.chart.addSeries(LineSeries, {
                         color: parsedData.color,
                         lineWidth: parsedData.line_width,
                         lineStyle: LineStyle.Solid,
                         priceLineVisible: false,
                         lastValueVisible: false,
                       });
-                      if (trendlineSeries) {
-                        trendlineSeries.setData([
-                          { time: parsedData.start_time, value: parsedData.start_price },
-                          { time: parsedData.end_time, value: parsedData.end_price },
-                        ]);
-                        this.chartStore.addDrawnLine({
-                          id,
-                          drawing_type,
-                          symbol,
-                          data: parsedData,
-                          line: trendlineSeries,
-                        });
-                      }
+                      trendlineSeries.setData([
+                        { time: parsedData.start_time, value: parsedData.start_price },
+                        { time: parsedData.end_time, value: parsedData.end_price },
+                      ]);
+                      this.chartStore.addDrawnLine({
+                        id,
+                        drawing_type,
+                        symbol,
+                        data: parsedData,
+                        line: trendlineSeries,
+                      });
+                    } catch (error) {
+                      console.error("Ошибка при загрузке линии тренда:", error);
                     }
                   }
-                } catch (e) {
-                  console.error("Error processing added drawing:", e);
                 }
-                break;
-              case "drawing_deleted":
-                const { id } = message.data;
-                const line = this.chartStore.drawnLines.find((l) => l.id === id);
-                if (line?.line) {
-                  this.chartStore.chart?.removeSeries(line.line);
-                }
-                this.chartStore.removeDrawnLine(id);
-                break;
-              case "drawing_saved":
-                if (message.status === "success") {
-                  const lineIndex = this.chartStore.drawnLines.findIndex((l) => l.id === null);
-                  if (lineIndex !== -1) {
-                    this.chartStore.updateDrawnLine(lineIndex, {
-                      ...this.chartStore.drawnLines[lineIndex],
-                      id: message.id,
+              });
+              break;
+            case "drawing_added":
+              const { id, drawing_type, symbol, data } = message.data;
+              const parsedData = JSON.parse(data);
+              const candlestickObj = this.chartStore.chartObjects.find((obj) => obj.id === "candlestick");
+              if (candlestickObj && candlestickObj.visible) {
+                if (drawing_type === "drawing.line") {
+                  try {
+                    const line = candlestickObj.series.createPriceLine({
+                      price: parsedData.price,
+                      color: parsedData.color,
+                      lineWidth: parsedData.line_width,
+                      lineStyle: LineStyle.Dashed,
                     });
-                    console.log("Drawing saved, ID:", message.id);
+                    this.chartStore.addDrawnLine({
+                      id,
+                      drawing_type,
+                      symbol,
+                      data: parsedData,
+                      line,
+                    });
+                  } catch (error) {
+                    console.error("Ошибка при добавлении линии уровня:", error);
                   }
-                } else {
-                  console.error("Error saving drawing:", message.message);
+                } else if (drawing_type === "drawing.ray") {
+                  try {
+                    let raySeries = this.chartStore.chart.addSeries(LineSeries, {
+                      color: parsedData.color,
+                      lineWidth: parsedData.line_width,
+                      lineStyle: LineStyle.Dashed,
+                      priceLineVisible: false,
+                      lastValueVisible: false,
+                    });
+                    raySeries.setData([
+                      { time: parsedData.start_time, value: parsedData.price },
+                      { time: this.getLastVisibleTime(), value: parsedData.price },
+                    ]);
+                    this.chartStore.addDrawnLine({
+                      id,
+                      drawing_type,
+                      symbol,
+                      data: parsedData,
+                      line: raySeries,
+                    });
+                  } catch (error) {
+                    console.error("Ошибка при добавлении линии луча:", error);
+                  }
+                } else if (drawing_type === "drawing.trendline") {
+                  try {
+                    let trendlineSeries = this.chartStore.chart.addSeries(LineSeries, {
+                      color: parsedData.color,
+                      lineWidth: parsedData.line_width,
+                      lineStyle: LineStyle.Solid,
+                      priceLineVisible: false,
+                      lastValueVisible: false,
+                    });
+                    trendlineSeries.setData([
+                      { time: parsedData.start_time, value: parsedData.start_price },
+                      { time: parsedData.end_time, value: parsedData.end_price },
+                    ]);
+                    this.chartStore.addDrawnLine({
+                      id,
+                      drawing_type,
+                      symbol,
+                      data: parsedData,
+                      line: trendlineSeries,
+                    });
+                  } catch (error) {
+                    console.error("Ошибка при добавлении линии тренда:", error);
+                  }
                 }
-                break;
-            }
-          } catch (e) {
-            console.error("Error parsing WebSocket message:", e);
+              }
+              break;
+            case "drawing_deleted":
+              const { id: drawingId, drawing_type: drawingType, symbol: drawingSymbol } = message.data;
+              const line = this.chartStore.drawnLines.find(
+                (l) => l.id === drawingId && l.drawing_type === drawingType && l.symbol === drawingSymbol
+              );
+              if (line && line.line) {
+                try {
+                  if (line.drawing_type === "drawing.line") {
+                    const candlestickObj = this.chartStore.chartObjects.find((obj) => obj.id === "candlestick");
+                    if (candlestickObj) {
+                      candlestickObj.series.removePriceLine(line.line);
+                    }
+                  } else {
+                    this.chartStore.chart.removeSeries(line.line);
+                  }
+                } catch (error) {
+                  console.error("Ошибка при удалении линии:", error);
+                }
+              }
+              this.chartStore.removeDrawnLine(drawingId);
+              break;
+            case "drawing_saved":
+              if (message.status === "success") {
+                console.log("Drawing сохранён, ID:", message.id);
+              } else {
+                console.error("Ошибка сохранения drawing:", message.message);
+              }
+              break;
           }
         };
         websocket.onerror = (error) => {
-          console.error("WebSocket error:", error);
+          console.error("Ошибка WebSocket:", error);
         };
         websocket.onclose = () => {
-          console.log("WebSocket closed, reconnecting...");
+          console.log("WebSocket закрыт, переподключение...");
           setTimeout(() => this.setupWebSocket(), 5000);
         };
       });
@@ -912,12 +992,13 @@ export default {
     subscribe() {
       const subscription = {
         event_type: "subscribe",
-        symbol: this.chartStore.symbol,
-        interval: this.chartStore.interval,
+        symbol: this.chartStore.symbol || "BTCUSDT",
+        interval: this.chartStore.interval || "1m",
         streams: ["kline"],
       };
-      if (this.chartStore.websocket?.readyState === WebSocket.OPEN) {
+      if (this.chartStore.websocket && this.chartStore.websocket.readyState === WebSocket.OPEN) {
         this.chartStore.websocket.send(JSON.stringify(subscription));
+        console.log("Отправлена подписка:", subscription);
       }
     },
     requestHistoricalData() {
@@ -935,7 +1016,7 @@ export default {
         },
       };
 
-      if (this.chartStore.websocket?.readyState === WebSocket.OPEN) {
+      if (this.chartStore.websocket && this.chartStore.websocket.readyState === WebSocket.OPEN) {
         this.chartStore.websocket.send(JSON.stringify(message));
       }
 
@@ -951,7 +1032,7 @@ export default {
         return;
       }
 
-      const currentRange = this.chartStore.chart?.timeScale().getVisibleRange();
+      const currentRange = this.chartStore.chart.timeScale().getVisibleRange();
       const existingData = candlestickObj.series.data();
       if (existingData.length > 0) {
         const earliestCandleTime = Math.min(...existingData.map((c) => c.time));
@@ -974,12 +1055,12 @@ export default {
           },
         };
 
-        if (this.chartStore.websocket?.readyState === WebSocket.OPEN) {
+        if (this.chartStore.websocket && this.chartStore.websocket.readyState === WebSocket.OPEN) {
           this.chartStore.websocket.send(JSON.stringify(message));
         }
 
         if (currentRange) {
-          this.chartStore.chart?.timeScale().setVisibleRange(currentRange);
+          this.chartStore.chart.timeScale().setVisibleRange(currentRange);
         }
         this.chartStore.setEarliestTime(newStartTime / 1000);
       }
@@ -1008,10 +1089,10 @@ export default {
       const candlestickObj = this.chartStore.chartObjects.find((obj) => obj.id === "candlestick");
       const volumeObj = this.chartStore.chartObjects.find((obj) => obj.id === "volume");
 
-      if (candlestickObj?.visible) {
+      if (candlestickObj && candlestickObj.visible) {
         candlestickObj.series.update(candle);
       }
-      if (volumeObj?.visible) {
+      if (volumeObj && volumeObj.visible) {
         volumeObj.series.update(volume);
         this.updateVolumeLabel();
       }
@@ -1021,7 +1102,7 @@ export default {
     updateCurrentPrice(price) {
       if (this.chartStore.priceLine) {
         const candlestickObj = this.chartStore.chartObjects.find((obj) => obj.id === "candlestick");
-        if (candlestickObj?.series) {
+        if (candlestickObj) {
           candlestickObj.series.removePriceLine(this.chartStore.priceLine);
         }
       }
@@ -1029,7 +1110,7 @@ export default {
       let color = "#00FF00";
       if (this.chartStore.previousPrice !== null) {
         color = price >= this.chartStore.previousPrice ? "#26a69a" : "#ef5350";
-      } else if (this.chartStore.lastCandle?.close !== undefined) {
+      } else if (this.chartStore.lastCandle && this.chartStore.lastCandle.close !== undefined) {
         color = this.chartStore.lastCandle.close >= this.chartStore.lastCandle.open ? "#26a69a" : "#ef5350";
       }
       this.chartStore.setPreviousPrice(price);
@@ -1037,10 +1118,10 @@ export default {
       const formattedPrice = price.toFixed(2);
 
       const candlestickObj = this.chartStore.chartObjects.find((obj) => obj.id === "candlestick");
-      if (candlestickObj?.visible && candlestickObj.series) {
+      if (candlestickObj && candlestickObj.visible) {
         const priceLine = candlestickObj.series.createPriceLine({
-          price,
-          color,
+          price: price,
+          color: color,
           lineWidth: 1,
           lineStyle: LineStyle.Solid,
           axisLabelVisible: true,
@@ -1072,7 +1153,7 @@ export default {
       const candlestickObj = this.chartStore.chartObjects.find((obj) => obj.id === "candlestick");
       const volumeObj = this.chartStore.chartObjects.find((obj) => obj.id === "volume");
 
-      if (candlestickObj?.visible) {
+      if (candlestickObj && candlestickObj.visible) {
         const existingData = candlestickObj.series.data();
         if (existingData.length > 0) {
           const newData = candlestickData.filter(
@@ -1085,7 +1166,7 @@ export default {
         }
       }
 
-      if (volumeObj?.visible) {
+      if (volumeObj && volumeObj.visible) {
         const existingVolumeData = volumeObj.series.data();
         if (existingVolumeData.length > 0) {
           const combinedVolumeData = [...existingVolumeData, ...volumeData]
@@ -1120,25 +1201,31 @@ export default {
           data: JSON.stringify(data),
         },
       };
-      if (this.chartStore.websocket?.readyState === WebSocket.OPEN) {
+      if (this.chartStore.websocket && this.chartStore.websocket.readyState === WebSocket.OPEN) {
         this.chartStore.websocket.send(JSON.stringify(message));
       }
     },
     deleteDrawingLine(id, drawing_type, symbol) {
       const message = {
         event_type: "delete_drawing",
-        data: { id, drawing_type, symbol },
+        data: {
+          id,
+          drawing_type,
+          symbol,
+        },
       };
-      if (this.chartStore.websocket?.readyState === WebSocket.OPEN) {
+      if (this.chartStore.websocket && this.chartStore.websocket.readyState === WebSocket.OPEN) {
         this.chartStore.websocket.send(JSON.stringify(message));
       }
     },
     loadDrawingLines() {
       const message = {
         event_type: "load_drawings",
-        data: { symbol: this.chartStore.symbol },
+        data: {
+          symbol: this.chartStore.symbol,
+        },
       };
-      if (this.chartStore.websocket?.readyState === WebSocket.OPEN) {
+      if (this.chartStore.websocket && this.chartStore.websocket.readyState === WebSocket.OPEN) {
         this.chartStore.websocket.send(JSON.stringify(message));
       }
     },
