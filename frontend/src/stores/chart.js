@@ -1,19 +1,20 @@
+// src/stores/chart.js
 import { defineStore } from 'pinia';
 
 export const useChartStore = defineStore('chart', {
   state: () => ({
     chart: null,
     websocket: null,
+    symbol: 'BTCUSDT',
+    interval: '1m',
     chartObjects: [],
     drawnLines: [],
     drawingTool: null,
-    symbol: 'BTCUSDT',
-    interval: '1m',
-    priceLine: null,
-    previousPrice: null,
     lastCandle: null,
     earliestTime: null,
     isLoading: false,
+    historicalData: null, // Для передачи исторических данных
+    indicators: [], // Для будущих индикаторов
   }),
   actions: {
     setChart(chart) {
@@ -25,29 +26,26 @@ export const useChartStore = defineStore('chart', {
     addChartObject(object) {
       this.chartObjects.push(object);
     },
+    toggleObjectVisibility(id) {
+      const obj = this.chartObjects.find((o) => o.id === id);
+      if (obj) {
+        obj.visible = !obj.visible;
+      }
+    },
     addDrawnLine(line) {
       this.drawnLines.push(line);
     },
     removeDrawnLine(id) {
-      this.drawnLines = this.drawnLines.filter(line => line.id !== id);
+      this.drawnLines = this.drawnLines.filter((line) => line.id !== id);
     },
-    updateDrawnLine(id, line) {
-      const index = this.drawnLines.findIndex(l => l.id === id);
+    updateDrawnLine(oldId, updatedLine) {
+      const index = this.drawnLines.findIndex((line) => line.id === oldId);
       if (index !== -1) {
-        this.drawnLines[index] = line;
+        this.drawnLines[index] = updatedLine;
       }
-    },
-    clearDrawnLines() {
-      this.drawnLines = [];
     },
     setDrawingTool(tool) {
       this.drawingTool = tool;
-    },
-    updatePriceLine(priceLine) {
-      this.priceLine = priceLine;
-    },
-    setPreviousPrice(price) {
-      this.previousPrice = price;
     },
     setLastCandle(candle) {
       this.lastCandle = candle;
@@ -58,11 +56,8 @@ export const useChartStore = defineStore('chart', {
     setLoading(loading) {
       this.isLoading = loading;
     },
-    toggleObjectVisibility(id) {
-      const obj = this.chartObjects.find((o) => o.id === id);
-      if (obj) {
-        obj.visible = !obj.visible;
-      }
+    setHistoricalData(data) {
+      this.historicalData = data;
     },
   },
 });
