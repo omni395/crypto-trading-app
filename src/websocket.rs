@@ -101,8 +101,18 @@ impl actix::StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession 
                         }
                         "save_drawing" => {
                             println!("Получено сообщение save_drawing: {}", text);
-                            if let Ok(mut drawing) = serde_json::from_value::<Drawing>(value["data"].clone()) {
-                                drawing.id = Uuid::new_v4().to_string();
+                            if let Some(data) = value.get("data") {
+                                let drawing_type = data.get("drawing_type").and_then(|v| v.as_str()).unwrap_or("");
+                                let symbol = data.get("symbol").and_then(|v| v.as_str()).unwrap_or("");
+                                let drawing_data = data.get("data").and_then(|v| v.as_str()).unwrap_or("{}");
+
+                                let drawing = Drawing {
+                                    id: Uuid::new_v4().to_string(),
+                                    drawing_type: drawing_type.to_string(),
+                                    symbol: symbol.to_string(),
+                                    data: drawing_data.to_string(),
+                                };
+
                                 let app_state = self.app_state.clone();
                                 let addr = ctx.address();
                                 let drawing_clone = drawing.clone();
@@ -117,7 +127,12 @@ impl actix::StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession 
                                             ));
                                             let message = json!({
                                                 "event_type": "drawing_added",
-                                                "data": drawing_clone
+                                                "data": {
+                                                    "id": drawing_clone.id,
+                                                    "drawing_type": drawing_clone.drawing_type,
+                                                    "symbol": drawing_clone.symbol,
+                                                    "data": drawing_clone.data
+                                                }
                                             })
                                             .to_string();
                                             app_state.broadcast(&message).await;
@@ -132,7 +147,7 @@ impl actix::StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession 
                                     }
                                 }));
                             } else {
-                                println!("Ошибка десериализации drawing: {:?}", value["data"]);
+                                println!("Ошибка: данные drawing отсутствуют");
                                 let addr = ctx.address();
                                 addr.do_send(ClientMessage(
                                     json!({"event_type": "drawing_saved", "status": "error", "message": "Invalid drawing data"})
@@ -199,7 +214,7 @@ impl actix::StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession 
                                             app_state.broadcast(&message).await;
                                         }
                                         Err(e) => {
-                                            println!("Ошибка удаления drawing: {:?}", e);
+                                            println!("Ошибка咖啡 удаления drawing: {:?}", e);
                                             addr.do_send(ClientMessage(
                                                 json!({"event_type": "drawing_deleted", "status": "error", "message": e.to_string()})
                                                     .to_string(),

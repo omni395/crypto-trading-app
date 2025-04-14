@@ -400,6 +400,7 @@ export default {
         },
       });
 
+      console.debug("Объект chart создан:", chart);
       this.chartStore.setChart(chart);
 
       let candlestickSeries;
@@ -498,6 +499,7 @@ export default {
           this.chartStore.addDrawnLine({
             id: null,
             drawing_type: "drawing.line",
+            symbol: this.chartStore.symbol,
             data: { price, color: "#FFD700", line_width: 1 },
             line,
           });
@@ -519,14 +521,16 @@ export default {
             return;
           }
 
+          const futureTime = Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60;
           raySeries.setData([
             { time, value: price },
-            { time: this.getLastVisibleTime(), value: price },
+            { time: futureTime, value: price },
           ]);
 
           this.chartStore.addDrawnLine({
             id: null,
             drawing_type: "drawing.ray",
+            symbol: this.chartStore.symbol,
             data: { price, start_time: time, color: "#FFD700", line_width: 1 },
             line: raySeries,
           });
@@ -563,29 +567,24 @@ export default {
               { time, value: endPrice },
             ]);
 
-            this.chartStore.addDrawnLine({
-              id: null,
-              drawing_type: "drawing.trendline",
-              data: {
-                start_price: startPrice,
-                end_price: endPrice,
-                start_time: this.trendlineStart.time,
-                end_time: time,
-                color: "#FFD700",
-                line_width: 1,
-              },
-              line: trendlineSeries,
-            });
-
-            this.saveDrawingLine("drawing.trendline", {
+            const trendlineData = {
               start_price: startPrice,
               end_price: endPrice,
               start_time: this.trendlineStart.time,
               end_time: time,
               color: "#FFD700",
               line_width: 1,
+            };
+
+            this.chartStore.addDrawnLine({
+              id: null,
+              drawing_type: "drawing.trendline",
+              symbol: this.chartStore.symbol,
+              data: trendlineData,
+              line: trendlineSeries,
             });
 
+            this.saveDrawingLine("drawing.trendline", trendlineData);
             this.trendlineStart = null;
             this.chartStore.setDrawingTool(null);
           }
@@ -690,7 +689,7 @@ export default {
           } else {
             this.chartStore.chart.removeSeries(line.line);
           }
-          this.deleteDrawingLine(line.id, line.drawing_type, line.symbol);
+          this.deleteDrawingLine(line.id, line.drawing_type, line.symbol || this.chartStore.symbol);
         } catch (error) {
           console.error("Ошибка при удалении линии:", error);
         }
@@ -745,9 +744,10 @@ export default {
             priceLineVisible: false,
             lastValueVisible: false,
           });
+          const futureTime = Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60;
           updatedLine.setData([
             { time: line.data.start_time, value: this.selectedLine.data.price },
-            { time: this.getLastVisibleTime(), value: this.selectedLine.data.price },
+            { time: futureTime, value: this.selectedLine.data.price },
           ]);
         } catch (error) {
           console.error("Ошибка при создании линии луча:", error);
@@ -779,10 +779,11 @@ export default {
       });
 
       this.saveDrawingLine(line.drawing_type, this.selectedLine.data);
+      this.showPropertiesModal = false;
     },
     scrollToLatestCandle() {
-      if (this.chartStore.chart) {
-        this.chartStore.chart.timeScale().fitContent();
+      if (this.chartStore.chart && this.chartStore.lastCandle) {
+        this.chartStore.chart.timeScale().scrollToPosition(this.chartStore.lastCandle.time, false);
       }
     },
     async setupWebSocket() {
@@ -807,7 +808,13 @@ export default {
               break;
             case "drawings_loaded":
               message.data.forEach(({ id, drawing_type, symbol, data }) => {
-                const parsedData = JSON.parse(data);
+                let parsedData;
+                try {
+                  parsedData = JSON.parse(data);
+                } catch (error) {
+                  console.error("Ошибка парсинга данных drawing:", error);
+                  return;
+                }
                 const candlestickObj = this.chartStore.chartObjects.find((obj) => obj.id === "candlestick");
                 if (candlestickObj && candlestickObj.visible) {
                   if (drawing_type === "drawing.line") {
@@ -837,9 +844,10 @@ export default {
                         priceLineVisible: false,
                         lastValueVisible: false,
                       });
+                      const futureTime = Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60;
                       raySeries.setData([
                         { time: parsedData.start_time, value: parsedData.price },
-                        { time: this.getLastVisibleTime(), value: parsedData.price },
+                        { time: futureTime, value: parsedData.price },
                       ]);
                       this.chartStore.addDrawnLine({
                         id,
@@ -879,8 +887,18 @@ export default {
               });
               break;
             case "drawing_added":
+              if (!message.data) {
+                console.error("Ошибка: message.data не определено для drawing_added");
+                return;
+              }
               const { id, drawing_type, symbol, data } = message.data;
-              const parsedData = JSON.parse(data);
+              let parsedData;
+              try {
+                parsedData = JSON.parse(data);
+              } catch (error) {
+                console.error("Ошибка парсинга данных drawing_added:", error);
+                return;
+              }
               const candlestickObj = this.chartStore.chartObjects.find((obj) => obj.id === "candlestick");
               if (candlestickObj && candlestickObj.visible) {
                 if (drawing_type === "drawing.line") {
@@ -910,9 +928,10 @@ export default {
                       priceLineVisible: false,
                       lastValueVisible: false,
                     });
+                    const futureTime = Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60;
                     raySeries.setData([
                       { time: parsedData.start_time, value: parsedData.price },
-                      { time: this.getLastVisibleTime(), value: parsedData.price },
+                      { time: futureTime, value: parsedData.price },
                     ]);
                     this.chartStore.addDrawnLine({
                       id,
@@ -951,29 +970,40 @@ export default {
               }
               break;
             case "drawing_deleted":
-              const { id: drawingId, drawing_type: drawingType, symbol: drawingSymbol } = message.data;
-              const line = this.chartStore.drawnLines.find(
-                (l) => l.id === drawingId && l.drawing_type === drawingType && l.symbol === drawingSymbol
-              );
-              if (line && line.line) {
-                try {
-                  if (line.drawing_type === "drawing.line") {
-                    const candlestickObj = this.chartStore.chartObjects.find((obj) => obj.id === "candlestick");
-                    if (candlestickObj) {
-                      candlestickObj.series.removePriceLine(line.line);
+              if (message.data) {
+                const { id: drawingId, drawing_type: drawingType, symbol: drawingSymbol } = message.data;
+                const line = this.chartStore.drawnLines.find(
+                  (l) => l.id === drawingId && l.drawing_type === drawingType && l.symbol === drawingSymbol
+                );
+                if (line && line.line) {
+                  try {
+                    if (line.drawing_type === "drawing.line") {
+                      const candlestickObj = this.chartStore.chartObjects.find((obj) => obj.id === "candlestick");
+                      if (candlestickObj) {
+                        candlestickObj.series.removePriceLine(line.line);
+                      }
+                    } else {
+                      this.chartStore.chart.removeSeries(line.line);
                     }
-                  } else {
-                    this.chartStore.chart.removeSeries(line.line);
+                  } catch (error) {
+                    console.error("Ошибка при удалении линии:", error);
                   }
-                } catch (error) {
-                  console.error("Ошибка при удалении линии:", error);
                 }
+                this.chartStore.removeDrawnLine(drawingId);
+                if (this.selectedLineIndex === drawingId) {
+                  this.selectedLineIndex = null;
+                }
+              } else {
+                console.error("Ошибка: message.data не определено для drawing_deleted");
               }
-              this.chartStore.removeDrawnLine(drawingId);
               break;
             case "drawing_saved":
               if (message.status === "success") {
                 console.log("Drawing сохранён, ID:", message.id);
+                const line = this.chartStore.drawnLines.find((l) => l.id === null && l.drawing_type === message.data?.drawing_type);
+                if (line) {
+                  this.chartStore.updateDrawnLine(null, { ...line, id: message.id });
+                }
               } else {
                 console.error("Ошибка сохранения drawing:", message.message);
               }
@@ -1008,8 +1038,8 @@ export default {
       const message = {
         event_type: "load_historical_data",
         data: {
-          symbol: this.chartStore.symbol,
-          interval: this.chartStore.interval,
+          symbol: this.chartStore.symbol || "BTCUSDT",
+          interval: this.chartStore.interval || "1m",
           start_time: startOfYesterday * 1000,
           end_time: now * 1000,
           is_initial_load: true,
@@ -1037,7 +1067,7 @@ export default {
       if (existingData.length > 0) {
         const earliestCandleTime = Math.min(...existingData.map((c) => c.time));
         const newEndTime = earliestCandleTime * 1000;
-        const newStartTime = newEndTime - 60 * 60 * 8 * 1000;
+        const newStartTime = newEndTime - 60 * 60 * 24 * 1000; // Загружаем 24 часа данных
 
         if (newStartTime < 0) {
           this.chartStore.setLoading(false);
@@ -1047,8 +1077,8 @@ export default {
         const message = {
           event_type: "load_historical_data",
           data: {
-            symbol: this.chartStore.symbol,
-            interval: this.chartStore.interval,
+            symbol: this.chartStore.symbol || "BTCUSDT",
+            interval: this.chartStore.interval || "1m",
             start_time: newStartTime,
             end_time: newEndTime,
             is_initial_load: false,
@@ -1095,42 +1125,6 @@ export default {
       if (volumeObj && volumeObj.visible) {
         volumeObj.series.update(volume);
         this.updateVolumeLabel();
-      }
-
-      this.updateCurrentPrice(candle.close);
-    },
-    updateCurrentPrice(price) {
-      if (this.chartStore.priceLine) {
-        const candlestickObj = this.chartStore.chartObjects.find((obj) => obj.id === "candlestick");
-        if (candlestickObj) {
-          candlestickObj.series.removePriceLine(this.chartStore.priceLine);
-        }
-      }
-
-      let color = "#00FF00";
-      if (this.chartStore.previousPrice !== null) {
-        color = price >= this.chartStore.previousPrice ? "#26a69a" : "#ef5350";
-      } else if (this.chartStore.lastCandle && this.chartStore.lastCandle.close !== undefined) {
-        color = this.chartStore.lastCandle.close >= this.chartStore.lastCandle.open ? "#26a69a" : "#ef5350";
-      }
-      this.chartStore.setPreviousPrice(price);
-
-      const formattedPrice = price.toFixed(2);
-
-      const candlestickObj = this.chartStore.chartObjects.find((obj) => obj.id === "candlestick");
-      if (candlestickObj && candlestickObj.visible) {
-        const priceLine = candlestickObj.series.createPriceLine({
-          price: price,
-          color: color,
-          lineWidth: 1,
-          lineStyle: LineStyle.Solid,
-          axisLabelVisible: true,
-          title: "",
-          axisLabelColor: color,
-          axisLabelTextColor: "#FFFFFF",
-          priceFormatter: () => formattedPrice,
-        });
-        this.chartStore.updatePriceLine(priceLine);
       }
     },
     handleHistoricalData(message, isInitialLoad = false) {
@@ -1182,22 +1176,13 @@ export default {
       if (isInitialLoad) {
         this.chartStore.chart.timeScale().fitContent();
       }
-
-      if (candlestickData.length > 0) {
-        const lastCandle = candlestickData[candlestickData.length - 1];
-        this.chartStore.setLastCandle({
-          open: parseFloat(lastCandle.open),
-          close: parseFloat(lastCandle.close),
-        });
-        this.updateCurrentPrice(parseFloat(lastCandle.close));
-      }
     },
     saveDrawingLine(drawing_type, data) {
       const message = {
         event_type: "save_drawing",
         data: {
           drawing_type,
-          symbol: this.chartStore.symbol,
+          symbol: this.chartStore.symbol || "BTCUSDT",
           data: JSON.stringify(data),
         },
       };
@@ -1222,7 +1207,7 @@ export default {
       const message = {
         event_type: "load_drawings",
         data: {
-          symbol: this.chartStore.symbol,
+          symbol: this.chartStore.symbol || "BTCUSDT",
         },
       };
       if (this.chartStore.websocket && this.chartStore.websocket.readyState === WebSocket.OPEN) {

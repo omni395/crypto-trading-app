@@ -28,8 +28,8 @@ pub async fn fetch_historical_data(
     state: web::Data<AppState>,
     request: HistoricalRequest,
 ) -> Result<Vec<serde_json::Value>, Box<dyn std::error::Error + Send + Sync>> {
-    let key = format!("historical:{}:{}", request.start_time, request.end_time);
-    let mut redis_con = state.redis_pool.clone(); // Добавляем mut
+    let key = format!("historical:{}:{}:{}", request.symbol, request.start_time, request.end_time);
+    let mut redis_con = state.redis_pool.clone();
     let cached_data: Option<String> = redis_con.get(&key).await?;
 
     if let Some(cached_data) = cached_data {
@@ -56,8 +56,8 @@ pub async fn fetch_historical_data(
     let symbol = request.symbol.to_uppercase();
     let mut all_historical_data = Vec::new();
     let mut current_start = request.start_time;
-    const LIMIT: i64 = 1000; // Ограничение Binance API
-    const INTERVAL_SECONDS: i64 = 60; // 1 минута в миллисекундах
+    const LIMIT: i64 = 1000;
+    const INTERVAL_SECONDS: i64 = 60 * 60 * 24;
 
     while current_start < request.end_time {
         let current_end = min(current_start + LIMIT * INTERVAL_SECONDS * 1000, request.end_time);
@@ -130,7 +130,7 @@ pub async fn fetch_historical_data(
     });
 
     let serialized_data = serde_json::to_string(&all_historical_data)?;
-    let mut redis_con = state.redis_pool.clone(); // Добавляем mut
+    let mut redis_con = state.redis_pool.clone();
     redis_con.set_ex::<_, _, ()>(&key, serialized_data, 3600).await?;
 
     Ok(all_historical_data)
