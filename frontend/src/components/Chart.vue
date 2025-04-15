@@ -153,6 +153,37 @@ export default {
       }
     },
     handleHistoricalData(message, isInitialLoad = false) {
+      // Проверяем тип сообщения
+      if (message.event_type === 'kline') {
+        // Обрабатываем одиночную свечу
+        const candle = {
+          time: message.start_time / 1000,
+          open: parseFloat(message.open),
+          high: parseFloat(message.high),
+          low: parseFloat(message.low),
+          close: parseFloat(message.close)
+        };
+
+        const volume = {
+          time: message.start_time / 1000,
+          value: parseFloat(message.volume || 0),
+          color: parseFloat(message.close) >= parseFloat(message.open) ? '#26a69a' : '#ef5350'
+        };
+
+        this.chartStore.setHistoricalData({
+          candlestickData: [candle],
+          volumeData: [volume],
+          isInitialLoad: false
+        });
+        return;
+      }
+
+      // Обработка исторических данных
+      if (!message.candlestick_data && !message.volume_data) {
+        console.warn('No valid data in message:', message);
+        return;
+      }
+
       const candlestickData = message.candlestick_data?.map(candle => ({
         time: candle.time,
         open: parseFloat(candle.open),
@@ -163,7 +194,7 @@ export default {
 
       const volumeData = message.volume_data?.map(volume => ({
         time: volume.time,
-        value: parseFloat(volume.value),
+        value: parseFloat(volume.value || 0),
         color: parseFloat(volume.close) >= parseFloat(volume.open) ? '#26a69a' : '#ef5350'
       }));
 

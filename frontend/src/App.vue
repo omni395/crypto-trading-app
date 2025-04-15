@@ -31,8 +31,6 @@
       </div>
     </div>
   </section>
-  <EmptyBlock />
-  <EmptyBlock />
 </template>
 
 <script>

@@ -111,19 +111,22 @@ export default {
       });
     },
     updateDataFromStore() {
-      console.log('Updating data from store');
       const historicalData = this.chartStore.historicalData;
-      console.log('Historical data:', historicalData);
       
-      if (historicalData) {
-        if (historicalData.candlestickData && this.candlestickSeries) {
-          console.log('Setting candlestick data:', historicalData.candlestickData);
-          this.candlestickSeries.setData(historicalData.candlestickData);
-        }
-        if (historicalData.volumeData && this.volumeSeries) {
-          console.log('Setting volume data:', historicalData.volumeData);
-          this.volumeSeries.setData(historicalData.volumeData);
-        }
+      if (!historicalData) {
+        return;
+      }
+
+      // Получаем данные из хранилища
+      const candlestickData = historicalData.candlestickData || [];
+      const volumeData = historicalData.volumeData || [];
+
+      if (candlestickData.length > 0 && this.candlestickSeries) {
+        this.candlestickSeries.update(candlestickData[0]);
+      }
+
+      if (volumeData.length > 0 && this.volumeSeries) {
+        this.volumeSeries.update(volumeData[0]);
       }
     },
     handleCrosshairMove(param) {
